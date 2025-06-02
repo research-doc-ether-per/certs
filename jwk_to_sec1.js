@@ -20,12 +20,27 @@ const HOLDER_DID = "did:example:holder-abc123";
 const INTERMEDIATE_KEY_PATH = "certs/issuer/intermediate/intermediate.key.pem";
 const INTERMEDIATE_CERT_PATH = "certs/issuer/intermediate/intermediate.pem";
 
+// Issuer の Leaf 証明書ファイルパス
+const ISSUER_LEAF_PEM_PATH         = path.resolve("certs/issuer/leaf/issuer-leaf.pem");
+// Issuer の中間 CA 証明書ファイルパス
+const ISSUER_INTERMEDIATE_PEM_PATH = path.resolve("certs/issuer/intermediate/intermediate.pem");
+// Issuer のルート CA 証明書ファイルパス
+const ISSUER_ROOT_PEM_PATH         = path.resolve("certs/issuer/root/root.pem");
+
+
+
 // 根 CA 证书路径（由 create_issuer_ca.sh 生成）
 const ROOT_CERT_PATH = "certs/issuer/root/root.pem";
 
 // CWT 的 Issuer URI（OID4VCI 发证端点）
 const ISSUER_URI =
   "https://issuer.example.com/realms/ExampleRealm/protocol/oid4vc/credential";
+
+
+// PEM ファイルを読み込んでトリミングするユーティリティ関数
+function loadPem(filePath) {
+  return fs.readFileSync(filePath, "utf8").trim();
+}
 
 // ----------------------------------------------------------------------------
 // 1. 辅助函数：PEM → DER（Buffer）
@@ -159,6 +174,24 @@ async function main() {
   const cwtBinary = await createCwtWithX5chain(jwk, HOLDER_DID, leafKeyPem);
   const cwtBase64Url = Buffer.from(cwtBinary).toString("base64url");
   console.log("\nCWT (Base64URL):\n", cwtBase64Url);
+
+
+// // 3.4 x5Chain：Issuer 自身の証明書チェーン（Issuer Leaf → Intermediate → Root）
+// //   これにより Holder は Offer を検証する際、
+// //   まず「Root」で「Intermediate → Root」の署名を確認し、
+// //   次に「Intermediate」で「Issuer Leaf → Intermediate」の署名を確認し、
+// //   最後に「Issuer Leaf」に含まれる公開鍵を使って Offer 全体に対する署名を検証できます。
+// x5Chain: [
+//   issuerLeafPem,     // Issuer の Leaf 証明書 PEM
+//   intermediatePem,   // Issuer の中間 CA 証明書 PEM
+//   rootPem            // Issuer のルート CA 証明書 PEM
+// ],
+
+// // 3.5 trustedRootCAs：Holder が信頼するルート CA のリスト
+// //   通常はルート CA（rootPem）のみを渡し、Holder 側でそのルートを信頼させます。
+// trustedRootCAs: [
+//   rootPem           // Holder が信頼するルート CA 証明書 PEM
+// ]
 
 }
 
