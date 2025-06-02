@@ -25,6 +25,11 @@ fi
 # -----------------------------------------------------------------------------
 # 4. Holder の EC 秘密鍵から公開鍵を抽出し、leaf.pub.pem を作成
 # -----------------------------------------------------------------------------
+ PKCS#8 → SEC1 形式に変換する
+openssl pkcs8 \
+  -in certs/holder/did-abc123/leaf-pk8.pem \
+  -nocrypt \
+  -out certs/holder/did-abc123/leaf.key.pem
 
 openssl ec -in "${HOLDER_DIR}/leaf.key.pem" -pubout \
   -out "${HOLDER_DIR}/leaf.pub.pem"
