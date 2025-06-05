@@ -1,193 +1,200 @@
-// ファイル：makeVerifiablePresentation.js
+// ファイル名：generateVpForSdJwt.js
 
 import { SignJWT, importJWK, decodeJwt } from "jose";
+import {
+  parseSDJWT,              // SD-JWT文字列をパースする関数
+  createDisclosurePayload,  // Disclosure 情報を整理する関数
+  createDisclosureFromPayload, // Disclosure を最終文字列化する関数
+  createSdJwtPresentationJwt  // KB-JWT（Key-Binding JWT）を作る関数
+} from "@transmute/sd-jwt";
 
 /**
- * 複数の署名済み JWT-VC（JWS 文字列）のサンプル配列。
- * 実際の運用では、これらは Holder が Issuer から取得した Verifiable Credential です。
- */
-const exampleVcJwtArray = [
-  // VC1（Issuer によって署名された JWS）
-  "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJ0eXBlIjpbIk9wZW5CYWRnZUNyZWRlbnRpYWwiXX19.VC1_SIGNATURE",
-  // VC2（別の Issuer または同一 Issuer によって署名された JWS）
-  "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJ0eXBlIjpbIk9wZW5CYWRnZUNyZWRlbnRpYWwiXX19.VC2_SIGNATURE"
-];
-
-/**
- * Holder の DID と対応する私鍵（JWK フォーマット）。
- * この鍵を使って Verifiable Presentation (VP) を JWS 署名します。
- */
-const HOLDER_DID = "did:example:holder123";
-
-// Ed25519 私鍵の最小 JWK 例。alg フィールドは必須。
-const HOLDER_PRIVATE_JWK = {
-  kty: "OKP",                  // キーの種類：Octet Key Pair（Ed25519）
-  crv: "Ed25519",              // カーブ名
-  d: "nWGxneL7O2K3tgLJ7bWZ-f0W3wExB6sNzzyFjFfRn_U", // 私鍵の Base64URL エンコード値
-  x: "11qYAYpkcT1eA1d6XR4ztP3N5966vX6R7Uw3dJg3Pl0", // 公開鍵の Base64URL エンコード値
-  alg: "EdDSA"                 // 使用アルゴリズム
-};
-
-/**
- * crv フィールドから対応する alg を推測する関数
+ * Holder が提示するときの一連の流れをまとめた関数。
  *
- * @param {string} crv - JWK の crv 値（例: "Ed25519", "P-256", "secp256k1"）
- * @returns {string} alg 名（例: "EdDSA", "ES256", "ES256K"）
- * @throws {Error} サポート外の crv が渡された場合に例外を投げる
- */
-function guessAlgFromCrv(crv) {
-  switch (crv) {
-    // Ed25519 カーブの場合、アルゴリズムは EdDSA
-    case "Ed25519":
-      return "EdDSA";
-    // P-256 カーブの場合、アルゴリズムは ES256
-    case "P-256":
-      return "ES256";
-    // secp256k1 カーブの場合、アルゴリズムは ES256K
-    case "secp256k1":
-      return "ES256K";
-    // その他のカーブはサポート外
-    default:
-      throw new Error(`サポートされていない crv：${crv}`);
-  }
-}
-
-/**
- * @async
- * 複数の JWT-VC をまとめて Verifiable Presentation (VP) にし、
- * Holder の私鍵で JWS 署名して返す関数。
+ * @param {Array<{ id: string, format: string, document: string }>} matchedCredentials
+ *   - Wallet が保管している「SD-JWT VC」および他の形式の VC の一覧。
+ *   - 形式が SD-JWT VC のものは `format === "sd_jwt_vc"`、`document` に
+ *     Issuer 署名済みの "<jwsCore>~<disclosure1>~<disclosure2>~…" という文字列を持つ。
  *
- * @param {string[]} vcJwtArray - 署名済みの JWT-VC（JWS 文字列）の配列
- * @param {string} holderDid - Holder の DID（VP の iss として使用）
- * @param {object} holderPrivateJwk - Holder の私鍵 JWK
- * @param {string} verifierClientId - Verifier の client_id（VP の aud として使用）
- * @param {string} nonce - OIDC4VP フローから渡される nonce
- * @returns {Promise<string>} - 署名済みの VP JWS（JWT 文字列）
+ * @param {{ [credentialId: string]: string[] }} selectedDisclosures
+ *   - Holder が「どの VC のどの Disclosure を、Verifier に見せるか」を選択した結果。
+ *   - キーが credential.id、値が「表示したい Disclosure の文字列配列」。
+ *   - たとえば { "cred-123": [ "WyIxIiwiYWJjZCJd", "WyIyIiwiMTIzNCI=" ] } のように
+ *     Base64URL化されたディスクロージャーを列挙した形。
+ *
+ * @param {{ kty: string, crv: string, d: string, x: string, alg: string, kid: string }} holderPrivateJwk
+ *   - Holder の DID に対応する秘密鍵 JWK。`alg`（例: "EdDSA"）および `kid`（例: "did:example:holder456#key-1"）
+ *     を含んでいる必要がある。
+ *
+ * @param {string} holderDid
+ *   - Holder 自身の DID（例: "did:example:holder456"）。VP の `iss` に使う。
+ *
+ * @param {string} verifierClientId
+ *   - Verifier が OIDC4VCI の authorize フローで伝えてきた `client_id`。
+ *   - VP の `aud` にこれを使う（例: "https://verifier.demo.walt.id/openid4vc/verify"）。
+ *
+ * @param {string} nonce
+ *   - OIDC4VCI の authorize フローで Verifier から渡された nonce。
+ *   - VP の `nonce` に使う。
+ *
+ * @returns {Promise<string>}
+ *   - 最終的に「Holder が Verifier に送るべき Verifiable Presentation (JWS 文字列)」を返す。
  */
-async function createVerifiablePresentationJwt(
-  vcJwtArray,
-  holderDid,
+export async function generateSdJwtPresentation(
+  matchedCredentials,
+  selectedDisclosures,
   holderPrivateJwk,
+  holderDid,
   verifierClientId,
   nonce
 ) {
-  // ------------------------------
-  // (1) VP のペイロードを構築
-  // ------------------------------
-  // vp.type: "VerifiablePresentation" を指定し、
-  // vp.verifiableCredential に配列内のすべての JWT-VC を設定する。
+  // ──────────────────────────────────────────────────────────────────────────────
+  // 1. SD-JWT VC を提示用に組み立てる
+  // ──────────────────────────────────────────────────────────────────────────────
+  //
+  // matchedCredentials の中から、SD-JWT VC 形式のものだけを取り出し、
+  // 「Base SD-JWT VC（Issuer が発行した <jwsCore>~<disclosure…>）」
+  // と「Holder が選択した disclosures（Base64URL 文字列）」を
+  // 波線 '~' でつなぎ合わせて最終的に Verifier に提示する文字列を作る。
+  //
+  // 例えば matchedCredentials の中に:
+  //   { id: "cred-123", format: "sd_jwt_vc", document: "<jwsCore>~<d1>~<d2>~<d3>" }
+  // という VC が入っているとし、selectedDisclosures["cred-123"] = ["<d1>", "<d2>"] の場合、
+  //   "documentWithDisclosures" = "<jwsCore>~<d1>~<d2>"
+  //
+  const sdJwtVcPresentedArray = matchedCredentials
+    .filter((cred) => cred.format === "sd_jwt_vc")
+    .map((cred) => {
+      // cred.document は Issuer 署名済みの "<jwsCore>~<disclosure1>~<disclosure2>~…" という文字列
+      const baseSdJwtString = cred.document;
+      const disclosuresForThisVc = selectedDisclosures?.[cred.id] ?? [];
+      // もし Holder が何も選択していなければ「document 自体」を丸ごと使う
+      // 選択がある場合は、Issuer が最初に署名した jwsCore（document.split("~")[0]）に
+      // Holder 自身が選んだ disclosures を波線でつなぐ
+      if (disclosuresForThisVc.length > 0) {
+        // 先頭の jwsCore 部分だけ取り出す
+        const [jwsCore /* , ...rest */] = baseSdJwtString.split("~");
+        // Holder が見せたい Disclosure を join("~") してくっつける
+        return [jwsCore, ...disclosuresForThisVc].join("~");
+      }
+      return baseSdJwtString;
+    });
+
+  // 例: ["<jwsCore1>~<d1>~<d2>", "<jwsCore2>~<dA>"] のような文字列配列になる
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // 2. SD-JWT+KB 形式の Presentation／Holder バインディング JWT を作る
+  // ──────────────────────────────────────────────────────────────────────────────
+  //
+  // SD-JWT 仕様では、「Holder がこの VC を確かに自分のものとして提示した」ことを証明する
+  // キー・バインディング JWT（KB-JWT）を付与する必要があります。
+  // その KB-JWT の中身は、最終的に Verifier がチェックする以下のような形式になっていることが多いです:
+  //
+  //   Header:
+  //     {
+  //       alg: "<Holder key の alg>",   // 例: "EdDSA"
+  //       typ: "JWT",
+  //       kid: "<Holder DID のキーID>"  // 例: "did:example:holder456#key-1"
+  //     }
+  //   Payload:
+  //     {
+  //       iss: "<Holder DID>",           // VP の発行者でもある Holder 自身
+  //       aud: "<Verifier の client_id>",
+  //       nonce: "<OIDC4VCI で渡された nonce>",
+  //       sd_jwt: "<jwsCore 部分のみ>"   // Issuer 署名済み SD-JWT の "jwsCore"（Disclosure を取り去った）
+  //     }
+  //
+  // 「jwsCore 部分のみ」は、たとえば "<base64Header>.<base64DigestPayload>.<base64Signature>" の形です。
+  // これに Holder がキープライベートで署名し、KB-JWT を完成させると、最終的な提示文字列は：
+  //
+  //   "<jwsCore>~<disclosure1>~…~<disclosureN>~<kbJwt>"
+  //
+  // になります。このまま Verifier に渡すと、下記のように検証されます:
+  //   1. Verifier はまず "<jwsCore>.<signature>" 部分の Issuer 署名を検証し、
+  //      digests（非開示部分）が改ざんされていないことをチェック。
+  //   2. 次に Holder が付与した disclosures をハッシュ化して digests と一致するか検証。
+  //   3. Disclosure で公開されたクレームを Payload に戻して、「完全版 VC」を復元。
+  //   4. さらに末尾の "<kbJwt>" を検証し、Holder が正しく自己のキーを使っていることを保証。
+  //
+  // まずは「提示用 SD-JWT VC 文字列配列」から、jwsCore 部分だけ抜き出すヘルパーを用意します:
+  function extractJwsCore(sdJwtString) {
+    // "xxx~yyy~zzz" のような文字列から、先頭の "xxx" を返す
+    return sdJwtString.split("~")[0];
+  }
+
+  // Holder キーを import して jose の KeyObject に変換する
+  const holderPrivateKey = await importJWK(
+    holderPrivateJwk,
+    holderPrivateJwk.alg
+  );
+
+  // ここで最終的に各 VC に対応する「SD-JWT+KB 形式の提示文字列」を作る
+  const sdJwtPlusKbArray = await Promise.all(
+    sdJwtVcPresentedArray.map(async (sdJwtString) => {
+      // 2-1. SD-JWT VC で最初の jwsCore 部分だけを取り出す
+      const jwsCore = extractJwsCore(sdJwtString);
+
+      // 2-2. KB-JWT のペイロードを組み立てる
+      const kbPayload = {
+        iss: holderDid,
+        aud: verifierClientId,
+        nonce: nonce,
+        sd_jwt: jwsCore
+      };
+
+      // 2-3. KB-JWT の JWS を作る
+      const kbJwt = await new SignJWT(kbPayload)
+        .setProtectedHeader({
+          alg: holderPrivateJwk.alg, // 例: "EdDSA"
+          typ: "JWT",
+          kid: holderPrivateJwk.kid  // 例: "did:example:holder456#key-1"
+        })
+        .sign(holderPrivateKey);
+
+      // 2-4. SD-JWT VC 本体（jwsCore～disclosures）と KB-JWT を '~' でつなぐ
+      // 結果例: "<jwsCore>~<disc1>~…~<discN>~<kbJwt>"
+      return [sdJwtString, kbJwt].join("~");
+    })
+  );
+
+  // たとえば sdJwtPlusKbArray = [
+  //   "<jwsCore1>~<d1>~<d2>~…~<kbJwt1>",
+  //   "<jwsCore2>~<dA>~<kbJwt2>",
+  //   …
+  // ]
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // 3. Verifiable Presentation 全体を構築して署名する
+  // ──────────────────────────────────────────────────────────────────────────────
+  //
+  // ここまでで「各 SD-JWT VC ごとの提示文字列」は sdJwtPlusKbArray に揃いました。
+  // それらをそのまま VP の `verifiableCredential` 配列に入れて、最後に VP を Holder の
+  // キーで JWS 署名すれば完成です。
+  //
+  // (A) VP の JSON ペイロードを構築
   const vpPayload = {
     vp: {
-      type: ["VerifiablePresentation"],
-      verifiableCredential: vcJwtArray
+      type: ["VerifiablePresentation", "SdJwtVerifiablePresentation"],
+      verifiableCredential: sdJwtPlusKbArray
     },
-    // JWT の標準フィールド
-    iss: holderDid,             // 発行者：Holder の DID
-    aud: verifierClientId,      // 受取人：Verifier の client_id
-    nonce: nonce,               // リプレイ防止用のランダム文字列
-    iat: Math.floor(Date.now() / 1000) // 発行時間（秒）
+    iss: holderDid,
+    aud: verifierClientId,
+    nonce: nonce,
+    iat: Math.floor(Date.now() / 1000)
   };
 
-  // ------------------------------
-  // (2) JWK を jose ライブラリが扱える鍵オブジェクトにインポート
-  // ------------------------------
-  // importJWK で JWK と使用アルゴリズムを渡して、KeyObject を取得
-  if (!holderPrivateJwk.alg) {
-    holderPrivateJwk.alg = guessAlgFromCrv(holderPrivateJwk.crv);
-  }
+  // (B) Holder のキーを import しておく（すでに import 済みの場合は再利用可）
+  //     const holderPrivateKey = await importJWK(holderPrivateJwk, holderPrivateJwk.alg);
 
-  const privateKey = await importJWK(holderPrivateJwk, holderPrivateJwk.alg);
-
-  // ------------------------------
-  // (3) SignJWT を使ってペイロードを JWS（JWT）形式で署名
-  // ------------------------------
-  // Protected Header には alg（署名アルゴリズム）と typ（JWT）を指定
+  // (C) VP を JWS 署名する
   const vpJwt = await new SignJWT(vpPayload)
-    .setProtectedHeader({ alg: holderPrivateJwk.alg, typ: "JWT" })
-    .sign(privateKey);
+    .setProtectedHeader({
+      alg: holderPrivateJwk.alg, // 例: "EdDSA"
+      typ: "JWT",
+      kid: holderPrivateJwk.kid  // 例: "did:example:holder456#key-1"
+    })
+    .sign(holderPrivateKey);
 
+  // これが最終的に Verifier に渡すべき「SD-JWT ベースの VP-JWT」です
   return vpJwt;
 }
-
-/**
- * （オプション）署名済み VP JWS から内部の verifiableCredential 配列を抽出する関数
- * 主にデバッグやテスト用途。実運用では Verifier 側がこの処理を行う。
- *
- * @param {string} vpJwt - 署名済みの VP JWS（JWT 文字列）
- * @returns {string[]} - VP 内に含まれる JWT-VC の配列
- */
-function extractVcArrayFromVp(vpJwt) {
-  // decodeJwt で JWS のペイロードをデコードし、payload.vp.verifiableCredential を取り出す
-  const decoded = decodeJwt(vpJwt);
-  return decoded.vp.verifiableCredential;
-}
-
-/**
- * メイン処理：OIDC4VP フローで渡される
- * - verifierClientId（Verifier の client_id）
- * - nonce（OIDC4VP の authorize で生成される）
- *
- * を想定し、複数の JWT-VC から VP を生成してコンソールに出力する。
- */
-;(async () => {
-  try {
-    // (4) OIDC4VP フローで Verifier から受け取るパラメータを想定
-    const verifierClientId = "https://verifier.demo.walt.id/openid4vc/verify";
-    const nonce = "faa5d51f-b16c-4d14-aac2-b52312b40e2c";
-
-    // (5) VP JWS を生成
-    const vpJwt = await createVerifiablePresentationJwt(
-      exampleVcJwtArray,
-      HOLDER_DID,
-      HOLDER_PRIVATE_JWK,
-      verifierClientId,
-      nonce
-    );
-    console.log("✅ 生成された Verifiable Presentation (JWS)：\n", vpJwt);
-
-    // (6) （オプション）内部の VC 配列を抽出して表示
-    const innerVcList = extractVcArrayFromVp(vpJwt);
-    console.log("⤷ VP に含まれる VC 配列（デバッグ用）：", innerVcList);
-    // innerVcList は exampleVcJwtArray と同一であるはず
-
-    // (7) ここまでで作成された VP JWS (vpJwt) を、そのまま Verifier に送信可能
-    //     例えば OIDC4VP の verify エンドポイントに対して HTTP POST で送る。
-    //
-    // POST https://verifier.demo.walt.id/openid4vc/verify/{state}
-    // Content-Type: application/json
-    //
-    // {
-    //   "vp_token": "<ここに vpJwt をセット>"
-    // }
-    //
-    // Verifier によっては presentation_submission も同時に必要な場合がある。
-    // その場合は以下のように作成してリクエストに含める。
-    //
-    // const descriptorMap = innerVcList.map((vcJwt, idx) => {
-    //   const decodedVc = decodeJwt(vcJwt);
-    //   const types = decodedVc.vc.type || ["VerifiableCredential"];
-    //   const lastType = types[types.length - 1];
-    //
-    //   return {
-    //     id: "OpenBadgeCredential",      // PD 内の input_descriptor.id と一致させる
-    //     format: "jwt_vc_json",          // JWT-VC の形式を示す
-    //     path: `$.vp.verifiableCredential[${idx}]`  // VP ペイロード内のパス
-    //   };
-    // });
-    //
-    // const presentationSubmission = {
-    //   id: "eXwb1zELUCXU",               // PD の ID
-    //   definition_id: "eXwb1zELUCXU",   // PD の ID を再度指定
-    //   descriptor_map: descriptorMap
-    // };
-    //
-    // リクエスト例：
-    // {
-    //   "vp_token": "<vpJwt>",
-    //   "presentation_submission": presentationSubmission
-    // }
-    //
-  } catch (e) {
-    console.error("❌ Verifiable Presentation の生成に失敗：", e);
-  }
-})();
