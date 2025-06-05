@@ -29,6 +29,30 @@ const HOLDER_PRIVATE_JWK = {
 };
 
 /**
+ * crv フィールドから対応する alg を推測する関数
+ *
+ * @param {string} crv - JWK の crv 値（例: "Ed25519", "P-256", "secp256k1"）
+ * @returns {string} alg 名（例: "EdDSA", "ES256", "ES256K"）
+ * @throws {Error} サポート外の crv が渡された場合に例外を投げる
+ */
+function guessAlgFromCrv(crv) {
+  switch (crv) {
+    // Ed25519 カーブの場合、アルゴリズムは EdDSA
+    case "Ed25519":
+      return "EdDSA";
+    // P-256 カーブの場合、アルゴリズムは ES256
+    case "P-256":
+      return "ES256";
+    // secp256k1 カーブの場合、アルゴリズムは ES256K
+    case "secp256k1":
+      return "ES256K";
+    // その他のカーブはサポート外
+    default:
+      throw new Error(`サポートされていない crv：${crv}`);
+  }
+}
+
+/**
  * @async
  * 複数の JWT-VC をまとめて Verifiable Presentation (VP) にし、
  * Holder の私鍵で JWS 署名して返す関数。
@@ -68,6 +92,10 @@ async function createVerifiablePresentationJwt(
   // (2) JWK を jose ライブラリが扱える鍵オブジェクトにインポート
   // ------------------------------
   // importJWK で JWK と使用アルゴリズムを渡して、KeyObject を取得
+  if (!holderPrivateJwk.alg) {
+    holderPrivateJwk.alg = guessAlgFromCrv(holderPrivateJwk.crv);
+  }
+
   const privateKey = await importJWK(holderPrivateJwk, holderPrivateJwk.alg);
 
   // ------------------------------
