@@ -1,35 +1,160 @@
-const cbor = require("cbor")
-const { X509Certificate } = require("@peculiar/x509")
-const forge = require("node-forge")
+// 文件：generatePresentationForVPToken.js
 
-// 你的 exampleRequest 十六进制字符串
-const exampleRequestHex =
-  "a267646f6354797065756f72672e69736f2e31383031332e352e312e6d444c6c6973737565725369676e6564a26a6e616d65537061636573a1716f72672e69736f2e31383031332e352e3183d8185852a4686469676573744944006672616e646f6d50fce6b21d930b5b99fad34980ab06c8ee71656c656d656e744964656e7469666965726b66616d696c795f6e616d656c656c656d656e7456616c756563446f65d8185852a4686469676573744944016672616e646f6d5058daba0e58ae65726d9ba1aaa62256ee71656c656d656e744964656e7469666965726a676976656e5f6e616d656c656c656d656e7456616c7565644a6f686ed8185858a4686469676573744944026672616e646f6d5063fd5066277bce71963369771b78c1f671656c656d656e744964656e7469666965726a62697274685f646174656c656c656d656e7456616c75656a313938302d30312d30316a697373756572417574688443a10126a1182159014b308201473081eea003020102020839edc87a9a78f92a300a06082a8648ce3d04030230173115301306035504030c0c4d444f4320524f4f54204341301e170d3234303530323133313333305a170d3235303530323133313333305a301b3119301706035504030c104d444f432054657374204973737565723059301306072a8648ce3d020106082a8648ce3d030107034200041b4448341885fa84140f77790c69de810b977a7236f490da306a0cbe2a0a441379ddde146b36a44b6ba7bbc067b04b71bad4b692a4616013d893d440ae253781a320301e300c0603551d130101ff04023000300e0603551d0f0101ff040403020780300a06082a8648ce3d04030203480030450221008e70041000ddec2a230b2586ecc59f8acd156f5d933d9363bc5e2263bb0ab69802201885a8b537327a69b022620f07c5c45d6293b86eed927a3f04e82cc51cadf8635901c3d8185901bea66776657273696f6e63312e306f646967657374416c676f726974686d675348412d3235366c76616c756544696765737473a1716f72672e69736f2e31383031332e352e31a3005820ac6801aa40d9871db115c9ba804bbccbddf7f29a6773d626cb6604d468e8714e015820066fc7c19bce2aeaf2d655351da21dbb12561db212e21e8c3e969fa469fd1c7c025820dbf831a97d5b504ca70c212224109e243f01f82cb4cde7c704a7166fd671ed326d6465766963654b6579496e666fa1696465766963654b6579a4010220012158200f08fd91a6b62e757e090514cd54d506ea4fb4354e10cdaa24c7748f59fb5e10225820ffa4113b5aef1a4dbd3fb4b9da126bc1ffc09b9cc679b4673dd321f021f2fc2167646f6354797065756f72672e69736f2e31383031332e352e312e6d444c6c76616c6964697479496e666fa3667369676e6564c0781e323032342d30372d32355431333a30353a33312e3438333237373433355a6976616c696446726f6dc0781e323032342d30372d32355431333a30353a33312e3438333237373738305a6a76616c6964556e74696cc0781e323032352d30372d32355431333a30353a33312e3438333237373836335a5840d57ee4f1a38cf49860b2f9b7c8f2469faa68720a8b731eae1d727e681bf0299fe86c0c120407cc8f0a7b951a6db6eac4c1905f07436fc556be1a65c13e432490"
+import {
+  createPresentation,    // Walt ID SDK 用于生成 VP（JWS-签名）
+  decodeJWT             // Walt ID SDK 用于解析 JWT，拿到 payload
+} from "@walt.id/ssi-sdk";
 
-// 转成 Buffer
-const buf = Buffer.from(exampleRequestHex, "hex")
+/**
+ * 假设我们有一个内存中的 credentialStore：
+ *  key：从 presentationDefinition 里算出来的 filterString
+ *  value：一个数组，里面每项是“已经签名好的 JWT-VC 字符串”。
+ */
+const credentialStore = {
+  OpenBadgeCredential: [
+    "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJ0eXBlIjpbIk9wZW5CYWRnZUNyZWRlbnRpYWwiXX19.VC1_signature",
+    "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2YyI6eyJ0eXBlIjpbIk9wZW5CYWRnZUNyZWRlbnRpYWwiXX19.VC2_signature"
+  ]
+};
 
-// CBOR 解码
-cbor
-  .decodeFirst(buf)
-  .then((decoded) => {
-    // 展示完整结构
-    console.dir(decoded, { depth: 10 })
+// 持有者的 DID 和 Walt ID Wallet 中私钥别名，用于签名 VP
+const HOLDER_DID       = "did:example:holder123";
+const HOLDER_KEY_ALIAS = "holder-key-alias";
 
-    const x5chainArr = decoded.issuerSigned.issuerAuth[1].get(33)
+/**
+ * 模拟一个“会话对象” generator，返回包含 presentationDefinition、nonce、authorizationRequest.clientId 的 plain object
+ */
+function createMockSession() {
+  return {
+    presentationDefinition: {
+      id: "eXwb1zELUCXU",
+      input_descriptors: [
+        {
+          id: "OpenBadgeCredential",
+          format: {
+            jwt_vc_json: {
+              alg: ["EdDSA"]
+            }
+          },
+          constraints: {
+            fields: [
+              {
+                path: ["$.vc.type"],
+                filter: {
+                  type: "string",
+                  pattern: "OpenBadgeCredential"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    nonce: "faa5d51f-b16c-4d14-aac2-b52312b40e2c",
+    authorizationRequest: {
+      clientId: "https://verifier.demo.walt.id/openid4vc/verify"
+    }
+  };
+}
 
-    console.debug("x5chainArr : ", x5chainArr, x5chainArr[0])
+/**
+ * 生成一个“TokenRequest” plain object（示例中暂时不需要额外字段）
+ */
+function createMockTokenRequest() {
+  return {};
+}
 
-    const pem =
-      "-----BEGIN CERTIFICATE-----\n" +
-      x5chainArr.toString("base64").replace(/(.{64})/g, "$1\n") +
-      "\n-----END CERTIFICATE-----\n"
-    console.debug("pem : ", pem)
+/**
+ * 核心函数：根据传入的 session（包含 presentationDefinition、nonce、clientId），
+ * 从 credentialStore 里筛选符合的 VC，生成一个签名好的 JWT-VP，并返回 { vp_jwt, presentation_submission }。
+ */
+export async function generatePresentationForVPToken(session, tokenRequest) {
+  // 1. 检查 presentationDefinition 是否存在
+  if (!session.presentationDefinition) {
+    throw new Error("invalid_request: presentationDefinition 为空");
+  }
+  const pd = session.presentationDefinition;
 
-    const cert = new X509Certificate(pem)
+  // 2. 从 input_descriptors 中解析出 filterString
+  const filterString =
+    pd.input_descriptors
+      .flatMap((desc) => desc.constraints?.fields ?? [])
+      .find((field) => field.path.some((p) => p.includes("type")))
+      ?.filter?.pattern ||
+    pd.input_descriptors
+      .flatMap((desc) => desc.schema?.map((s) => s.uri) ?? [])
+      .find((uri) => !!uri);
 
-    console.log("subject:", cert.subject)
-    console.log("public key:", cert.publicKey.toString())
-    console.log("algorithm:", cert.publicKey.algorithm.name)
-  })
-  .catch(console.error)
+  // 3. 从 credentialStore 中拿出所有匹配 filterString 的 JWT-VC
+  const matchedVcArray = credentialStore[filterString] ?? [];
+
+  // 4. 调用 Walt ID SDK，创建一个 Presentation（VP），将 matchedVcArray 塞进去
+  const vpJwt = await createPresentation({
+    presentation: {
+      type: ["VerifiablePresentation"],
+      verifiableCredential: matchedVcArray
+    },
+    did: HOLDER_DID,
+    keyRef: HOLDER_KEY_ALIAS,
+    aud: session.authorizationRequest.clientId,
+    nonce: session.nonce
+  });
+
+  console.log("生成的 VP (JWT)：", vpJwt);
+
+  // 5. 解码刚刚生成的 vpJwt，拿到 payload 中的 vp.verifiableCredential 数组
+  const { payload: vpPayload } = await decodeJWT(vpJwt);
+  const jwtCreds = vpPayload.vp.verifiableCredential;
+
+  // 6. 构造 OIDC4VP 所需的 presentation_submission
+  const descriptorMap = jwtCreds.map((vcJwtStr, idx) => {
+    const { payload: vcPayload } = decodeJWT(vcJwtStr);
+    const types = vcPayload.vc?.type || ["VerifiableCredential"];
+    const vcType = types[types.length - 1];
+
+    return {
+      id: pd.input_descriptors[idx].id,
+      format: "jwt_vp_json",
+      path: "$",
+      path_nested: {
+        id: pd.input_descriptors[idx].id,
+        format: "jwt_vc_json",
+        path: `$.verifiableCredential[${idx}]`
+      }
+    };
+  });
+
+  const presentationSubmission = {
+    id: pd.id,
+    definition_id: pd.id,
+    descriptor_map: descriptorMap
+  };
+
+  return {
+    vp_jwt: vpJwt,
+    presentation_submission: presentationSubmission
+  };
+}
+
+// ==============================
+// 如果你想测试一下这个函数：
+(async () => {
+  const session = createMockSession();
+  const tokenRequest = createMockTokenRequest();
+
+  try {
+    const { vp_jwt, presentation_submission } =
+      await generatePresentationForVPToken(session, tokenRequest);
+
+    console.log("=== 最终返回给 OIDC4VP 的内容 ===");
+    console.log(
+      JSON.stringify(
+        { vp_token: vp_jwt, presentation_submission },
+        null,
+        2
+      )
+    );
+  } catch (err) {
+    console.error("生成 VP 失败：", err);
+  }
+})();
