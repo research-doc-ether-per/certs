@@ -17,7 +17,7 @@ const GRADLE_OPTS = [
   `-Dhttps.proxyPort=${httpsUrl.port}`
 ].join(" ");
 
-// 原始列表，支持 "~/…" 或者相对路径
+// 要处理的 Dockerfile 列表（支持 "~/…" 或相对路径）
 const rawDockerfiles = [
   "Dockerfile",
   "~/work/waltid/issuer-api/Dockerfile",
@@ -26,23 +26,18 @@ const rawDockerfiles = [
   "serviceA/Dockerfile"
 ];
 
-// 展开 "~/" 为家目录，其它按当前目录解析
-const dockerfiles = rawDockerfiles.map(p => {
-  if (p.startsWith("~/")) {
-    return path.join(os.homedir(), p.slice(2));
-  }
-  return path.resolve(process.cwd(), p);
-});
+// 展开 "~/" 并解析路径
+const dockerfiles = rawDockerfiles.map(p =>
+  p.startsWith("~/")
+    ? path.join(os.homedir(), p.slice(2))
+    : path.resolve(process.cwd(), p)
+);
 
-/**
- * 对单个 Dockerfile 注入代理行
- * @param {string} dockerfilePath
- */
 function injectProxy(dockerfilePath) {
   const content = fs.readFileSync(dockerfilePath, "utf8");
   const lines = content.split(/\r?\n/);
 
-  // 基础的 proxy ENV 行（无 GRADLE_OPTS）
+  // 基础的 proxy ENV 行
   const baseProxyLines = [
     `ENV HTTP_PROXY=${HTTP_PROXY}`,
     `ENV HTTPS_PROXY=${HTTPS_PROXY}`,
@@ -50,25 +45,35 @@ function injectProxy(dockerfilePath) {
     `ENV https_proxy=${HTTPS_PROXY}`
   ];
 
-  // 如果路径包含 issuer-api/verifier-api/wallet-api，就加上 GRADLE_OPTS
+  // 检查路径里是否包含关键字，决定是否需要 GRADLE_OPTS
   const needsGradleOpts = /issuer-api|verifier-api|wallet-api/.test(dockerfilePath);
   const proxyLines = needsGradleOpts
     ? [...baseProxyLines, `ENV GRADLE_OPTS="${GRADLE_OPTS}"`]
     : baseProxyLines;
 
   const out = [];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     out.push(line);
+
     if (/^\s*FROM\b/.test(line)) {
-      proxyLines.forEach(l => out.push(l));
+      // 在原文件里看一下，紧跟的几行是否已包含第一个 proxyLines[0]
+      const segment = lines.slice(i + 1, i + 1 + proxyLines.length);
+      const already = segment.some(l => l.trim() === proxyLines[0]);
+
+      if (already) {
+        console.log(`ℹ️  Skip injecting into ${dockerfilePath} at line ${i + 1}, already present.`);
+      } else {
+        proxyLines.forEach(l => out.push(l));
+        console.log(`✓ Injected proxy${needsGradleOpts ? "+GRADLE_OPTS" : ""} into ${dockerfilePath} at line ${i + 1}`);
+      }
     }
   }
 
   fs.writeFileSync(dockerfilePath, out.join("\n"), "utf8");
-  console.log(`✓ Processed ${dockerfilePath} (add GRADLE_OPTS: ${needsGradleOpts})`);
 }
 
-// 遍历处理
+// 批量处理
 dockerfiles.forEach(filePath => {
   if (!fs.existsSync(filePath)) {
     console.warn(`⚠️  File not found, skip: ${filePath}`);
