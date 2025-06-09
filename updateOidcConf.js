@@ -1,44 +1,62 @@
-// updateOidcConf.js
-
+#!/usr/bin/env node
 import fs from "fs";
 import path from "path";
 
-// 1. oidc.conf のパスを指定
-const confPath = path.join(__dirname, "oidc.conf");
+// --- 配置区：硬编码你的代理地址和 GRADLE_OPTS ---
+const HTTP_PROXY = "http://proxy.co.jp:18080";
+const HTTPS_PROXY = "http://proxy.co.jp:18080";
 
-// 2. 置き換えたい値をここで定義
-const newValues = {
-  oidcRealm: "http://0.0.0.0:8080/realms/my-new-realm",
-  clientSecret: "mySuperSecretValue",
-  keycloakUserApi: "http://0.0.0.0:8080/admin/realms/my-new-realm/users",
-};
+// 从 HTTP_PROXY/HTTPS_PROXY 提取 host 和 port
+const httpUrl = new URL(HTTP_PROXY);
+const httpsUrl = new URL(HTTPS_PROXY);
+const GRADLE_OPTS = [
+  `-Dhttp.proxyHost=${httpUrl.hostname}`,
+  `-Dhttp.proxyPort=${httpUrl.port}`,
+  `-Dhttps.proxyHost=${httpsUrl.hostname}`,
+  `-Dhttps.proxyPort=${httpsUrl.port}`
+].join(" ");
 
-// 3. ファイルを UTF-8 で読み込む
-let content = fs.readFileSync(confPath, { encoding: "utf-8" });
+// 你要处理的所有 Dockerfile 路径列表（相对或绝对都可以）
+const dockerfiles = [
+  "Dockerfile",
+  "serviceA/Dockerfile",
+  "serviceB/Dockerfile.prod"
+];
 
-// 4. 正規表現で各項目を置き換える
-//    ・publicBaseUrl など他の行は触らないように、
-//    ・キー名 = "値" の形式を想定している
-content = content
-  // oidcRealm = "旧値"  →  oidcRealm = "新しいURL"
-  .replace(
-    /^(\s*oidcRealm\s*=\s*)"[^"]*"/m,
-    `$1"${newValues.oidcRealm}"`
-  )
+function injectProxyAndGradleOpts(dockerfilePath) {
+  // 1. 读取原始 Dockerfile
+  const content = fs.readFileSync(dockerfilePath, "utf-8");
+  const lines = content.split(/\r?\n/);
 
-  // clientSecret = "旧値"  →  clientSecret = "新しいシークレット"
-  .replace(
-    /^(\s*clientSecret\s*=\s*)"[^"]*"/m,
-    `$1"${newValues.clientSecret}"`
-  )
+  // 2. 构造要插入的 ENV 行
+  const proxyEnvLines = [
+    `ENV HTTP_PROXY=${HTTP_PROXY}`,
+    `ENV HTTPS_PROXY=${HTTPS_PROXY}`,
+    `ENV http_proxy=${HTTP_PROXY}`,
+    `ENV https_proxy=${HTTPS_PROXY}`,
+    `ENV GRADLE_OPTS="${GRADLE_OPTS}"`
+  ];
 
-  // keycloakUserApi = "旧値"  →  keycloakUserApi = "新しいURL"
-  .replace(
-    /^(\s*keycloakUserApi\s*=\s*)"[^"]*"/m,
-    `$1"${newValues.keycloakUserApi}"`
-  );
+  // 3. 遍历每一行，遇到 FROM 就插入
+  const out = [];
+  for (const line of lines) {
+    out.push(line);
+    if (/^\s*FROM\b/.test(line)) {
+      proxyEnvLines.forEach(l => out.push(l));
+    }
+  }
 
-// 5. 上書き保存
-fs.writeFileSync(confPath, content, { encoding: "utf-8" });
+  // 4. 写回同一个文件
+  fs.writeFileSync(dockerfilePath, out.join("\n"), "utf-8");
+  console.log(`✓ Injected proxy+GRADLE_OPTS into ${dockerfilePath}`);
+}
 
-console.log("✅ oidc.conf を更新しました。");
+// 5. 对数组中每个文件执行注入
+dockerfiles.forEach(file => {
+  const fullPath = path.resolve(process.cwd(), file);
+  if (!fs.existsSync(fullPath)) {
+    console.warn(`⚠️  文件不存在，跳过：${fullPath}`);
+    return;
+  }
+  injectProxyAndGradleOpts(fullPath);
+});
