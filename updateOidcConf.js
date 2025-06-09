@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import fs from "fs";
 import path from "path";
+import os from "os";
 
-// --- 配置区：硬编码你的代理地址和 GRADLE_OPTS ---
-const HTTP_PROXY = "http://proxy.co.jp:18080";
+// --- 配置区：硬编码你的代理地址 ---
+const HTTP_PROXY  = "http://proxy.co.jp:18080";
 const HTTPS_PROXY = "http://proxy.co.jp:18080";
 
-// 从 HTTP_PROXY/HTTPS_PROXY 提取 host 和 port
-const httpUrl = new URL(HTTP_PROXY);
+// 构造 GRADLE_OPTS
+const httpUrl  = new URL(HTTP_PROXY);
 const httpsUrl = new URL(HTTPS_PROXY);
 const GRADLE_OPTS = [
   `-Dhttp.proxyHost=${httpUrl.hostname}`,
@@ -16,47 +17,62 @@ const GRADLE_OPTS = [
   `-Dhttps.proxyPort=${httpsUrl.port}`
 ].join(" ");
 
-// 你要处理的所有 Dockerfile 路径列表（相对或绝对都可以）
-const dockerfiles = [
+// 原始列表，支持 "~/…" 或者相对路径
+const rawDockerfiles = [
   "Dockerfile",
-  "serviceA/Dockerfile",
-  "serviceB/Dockerfile.prod"
+  "~/work/waltid/issuer-api/Dockerfile",
+  "~/work/waltid/verifier-api/Dockerfile",
+  "~/work/waltid/wallet-api/Dockerfile",
+  "serviceA/Dockerfile"
 ];
 
-function injectProxyAndGradleOpts(dockerfilePath) {
-  // 1. 读取原始 Dockerfile
-  const content = fs.readFileSync(dockerfilePath, "utf-8");
+// 展开 "~/" 为家目录，其它按当前目录解析
+const dockerfiles = rawDockerfiles.map(p => {
+  if (p.startsWith("~/")) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return path.resolve(process.cwd(), p);
+});
+
+/**
+ * 对单个 Dockerfile 注入代理行
+ * @param {string} dockerfilePath
+ */
+function injectProxy(dockerfilePath) {
+  const content = fs.readFileSync(dockerfilePath, "utf8");
   const lines = content.split(/\r?\n/);
 
-  // 2. 构造要插入的 ENV 行
-  const proxyEnvLines = [
+  // 基础的 proxy ENV 行（无 GRADLE_OPTS）
+  const baseProxyLines = [
     `ENV HTTP_PROXY=${HTTP_PROXY}`,
     `ENV HTTPS_PROXY=${HTTPS_PROXY}`,
     `ENV http_proxy=${HTTP_PROXY}`,
-    `ENV https_proxy=${HTTPS_PROXY}`,
-    `ENV GRADLE_OPTS="${GRADLE_OPTS}"`
+    `ENV https_proxy=${HTTPS_PROXY}`
   ];
 
-  // 3. 遍历每一行，遇到 FROM 就插入
+  // 如果路径包含 issuer-api/verifier-api/wallet-api，就加上 GRADLE_OPTS
+  const needsGradleOpts = /issuer-api|verifier-api|wallet-api/.test(dockerfilePath);
+  const proxyLines = needsGradleOpts
+    ? [...baseProxyLines, `ENV GRADLE_OPTS="${GRADLE_OPTS}"`]
+    : baseProxyLines;
+
   const out = [];
   for (const line of lines) {
     out.push(line);
     if (/^\s*FROM\b/.test(line)) {
-      proxyEnvLines.forEach(l => out.push(l));
+      proxyLines.forEach(l => out.push(l));
     }
   }
 
-  // 4. 写回同一个文件
-  fs.writeFileSync(dockerfilePath, out.join("\n"), "utf-8");
-  console.log(`✓ Injected proxy+GRADLE_OPTS into ${dockerfilePath}`);
+  fs.writeFileSync(dockerfilePath, out.join("\n"), "utf8");
+  console.log(`✓ Processed ${dockerfilePath} (add GRADLE_OPTS: ${needsGradleOpts})`);
 }
 
-// 5. 对数组中每个文件执行注入
-dockerfiles.forEach(file => {
-  const fullPath = path.resolve(process.cwd(), file);
-  if (!fs.existsSync(fullPath)) {
-    console.warn(`⚠️  文件不存在，跳过：${fullPath}`);
+// 遍历处理
+dockerfiles.forEach(filePath => {
+  if (!fs.existsSync(filePath)) {
+    console.warn(`⚠️  File not found, skip: ${filePath}`);
     return;
   }
-  injectProxyAndGradleOpts(fullPath);
+  injectProxy(filePath);
 });
