@@ -1,29 +1,69 @@
 #!/usr/bin/env bash
-set -e
+###############################################################################
+# build_waltid.sh
+#   walt.id の特定サービスをローカル build し、docker-compose.yml の
+#   pull_policy を never に書き換えるユーティリティ
+#
+# 使い方:
+#   ./build_waltid.sh                   # 3つ全部 build
+#   ./build_waltid.sh issuer-api        # issuer-api のみ build
+#   COMPOSE_FILE=./docker-compose.yml ./build_waltid.sh wallet-api
+###############################################################################
 
-echo "清理 APT 缓存..."
-sudo apt-get clean
-sudo apt-get autoremove --purge -y
+set -euo pipefail
 
-echo "清理 Snap 旧版本..."
-snap list --all \
-  | awk '/disabled/{print $1, $2}' \
-  | xargs -rn2 sudo snap remove || true
+###############################################################################
+# 設定値（必要に応じて変更）
+###############################################################################
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yaml}"  # デフォルトの compose ファイル
+DEFAULT_SERVICES=("wallet-api" "issuer-api" "verifier-api")
+SED="${SED:-sed}"                                    # macOS なら gsed を指定
 
-echo "清理 systemd 日志（保留最近 100M 日志）..."
-# sudo journalctl --vacuum-time=2d
-sudo journalctl --vacuum-size=100M
+###############################################################################
+# ユーティリティ関数
+###############################################################################
+die() { echo "❌ $*" >&2; exit 1; }
 
-echo "删除 /var/log 旧日志..."
-sudo find /var/log -type f \( -name "*.gz" -o -name "*.[0-9]" \) -delete
+###############################################################################
+# 1. 引数解析
+###############################################################################
+if [[ $# -eq 0 ]]; then
+  SERVICES=("${DEFAULT_SERVICES[@]}")        # 引数なし → 全部
+elif [[ $# -eq 1 ]]; then
+  [[ " ${DEFAULT_SERVICES[*]} " == *" $1 "* ]] \
+    || die "引数は wallet-api / issuer-api / verifier-api のいずれかにしてください"
+  SERVICES=("$1")                            # 指定された 1 サービス
+else
+  die "引数は最大 1 つまでです"
+fi
 
-echo "清理用户级缓存..."
-rm -rf ~/.cache/thumbnails/* ~/.cache/*
+echo "▶ ビルド対象: ${SERVICES[*]}"
+echo "▶ 使用 compose ファイル: $COMPOSE_FILE"
+[[ -f "$COMPOSE_FILE" ]] || die "$COMPOSE_FILE が見つかりません"
 
-echo "释放内存页缓存..."
-sudo sync && sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
+###############################################################################
+# 2. docker compose build
+###############################################################################
+docker compose -f "$COMPOSE_FILE" build "${SERVICES[@]}"
+echo "✅ build 完了"
 
-echo "（如果装了 Docker）清理 Docker 垃圾..."
-docker system prune -a --volumes -f || true
+###############################################################################
+# 3. pull_policy を never に書き換え
+###############################################################################
+for svc in "${SERVICES[@]}"; do
+  # service ブロックの開始行を探すための正規表現
+  svc_regex="^\\s{2}${svc}:"
 
-echo "全部清理完毕！"
+  # すでに pull_policy 行があるか判定
+  if $SED -n "/$svc_regex/,/^[^[:space:]]/p" "$COMPOSE_FILE" | grep -q "pull_policy:"; then
+    # 既存行を never に置換
+    $SED -i -E "/$svc_regex/,/^[^[:space:]]/ s/pull_policy:\\s+[a-z]+/pull_policy: never/" "$COMPOSE_FILE"
+  else
+    # pull_policy 行が無ければ service ブロック直下に挿入（2スペースインデント）
+    $SED -i -E "/$svc_regex/a\\
+  pull_policy: never" "$COMPOSE_FILE"
+  fi
+done
+
+echo "✅ pull_policy を never に設定しました（${SERVICES[*]}）"
+echo "🎉 これで 'docker compose up --no-build' でローカルイメージを確実に使用できます"
