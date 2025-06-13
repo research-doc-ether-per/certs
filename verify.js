@@ -1,33 +1,54 @@
-# 生成 P-256 私钥
-openssl ecparam -name prime256v1 -genkey -noout -out ec-key.pem
+// generateDids.js
+// Script to create DID Documents for multiple users (P-256 keys)
 
-# 从私钥导出公钥（PEM 格式）
-openssl ec -in ec-key.pem -pubout -out ec-pub.pem
+import { generateKeyPairSync } from 'crypto';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import path from 'path';
 
-# 导出成 DER 格式
-openssl ec -in ec-key.pem -pubout -outform DER -out ec-pub.der
+// Configuration parameters (adjust as needed)
+const HOST = process.env.DID_HOST || 'host.docker.internal';
+const PORT = process.env.DID_PORT || '3000';
+const BASE_DID = `did:web:${HOST}%3A${PORT}`;
 
-// toJwk.js
-import fs from 'fs';
-import { Buffer } from 'buffer';
-import { createPublicKey } from 'crypto';
+// List of user IDs
+const users = ['test01', 'test02', 'test03', 'test04'];
 
-// 读取 PEM 公钥
-const pem = fs.readFileSync('ec-pub.pem', 'utf8');
-// 用 Node.js crypto 解析
-const keyObj = createPublicKey(pem);
-const der = keyObj.export({ type: 'spki', format: 'der' });
+// Directory to save generated DID JSON files
+const configDir = path.resolve('./config');
+if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
 
-// DER 结构: 0x30… Sequence → BIT STRING → 0x04… Octet String of ECPoint
-// ECPoint 第一字节 0x04 后面紧跟 X||Y，各 32 字节
-const ecPoint = der.slice(-65);        // 最后 65 字节
-const x = ecPoint.slice(1, 33);        // 字节 1–32
-const y = ecPoint.slice(33, 65);       // 字节 33–64
+users.forEach((user) => {
+  // 1. Generate EC P-256 key pair
+  const { publicKey, privateKey } = generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1', // secp256r1
+  });
 
-// Base64URL 编码
-const b64url = buf =>
-  buf.toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  // 2. Export public JWK
+  const publicJwk = publicKey.export({ format: 'jwk' });
 
-console.log('x:', b64url(x));
-console.log('y:', b64url(y));
+  // 3. Build DID Document
+  const did = `${BASE_DID}:${user}`;
+  const keyId = `${did}#key-1`;
+  const didDoc = {
+    '@context': [
+      'https://www.w3.org/ns/did/v1',
+      'https://w3id.org/security/suites/jws-2020/v1',
+    ],
+    id: did,
+    verificationMethod: [
+      {
+        id: keyId,
+        type: 'EcdsaSecp256r1VerificationKey2019',
+        controller: did,
+        publicKeyJwk,
+      },
+    ],
+    authentication: [keyId],
+    assertionMethod: [keyId],
+  };
+
+  // 4. Write DID Document to file
+  const filePath = path.join(configDir, `did.${user}.json`);
+  writeFileSync(filePath, JSON.stringify(didDoc, null, 2));
+  console.log(`Created DID for ${user}: ${filePath}`);
+});
