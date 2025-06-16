@@ -65,10 +65,10 @@ echo "x5chain_pem.txt   ← proof.x5chain に丸ごと 1 要素で入れる"
 # ───────────────────────────────────────────────
 # 4-B. x5Chain（DER→Base64URL 版）※walt.id 推奨
 # ───────────────────────────────────────────────
-for crt in mdl-issuer rootCA; do
-  openssl x509 -outform der -in ${crt}.crt | \
-    base64 -w0 | tr '+/' '-_' | tr -d '=' > ${crt}.b64
-done
+# LEAF → root の順で Base64URL 文字列を作成
+openssl x509 -outform der -in mdl-issuer.crt | base64 -w0 | tr '+/' '-_' | tr -d '=' > mdl-issuer.b64
+openssl x509 -outform der -in rootCA.pem     | base64 -w0 | tr '+/' '-_' | tr -d '=' > rootCA.b64
+
 
 echo "mdl-issuer.b64 / rootCA.b64  ← proof.x5chain に順序どおり配列で入れる"
 
