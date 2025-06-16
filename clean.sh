@@ -69,8 +69,12 @@ openssl x509 -outform der -in mdl-issuer.crt > leaf.der
 openssl x509 -outform der -in rootCA.pem     > root.der
 
 # 12. DER を連結し、Base64URL エンコード（VC の proof.x5chain 用）
-cat leaf.der root.der | base64 -w0 | tr '+/' '-_' | tr -d '=' > x5chain.txt
+cat mdl-issuer.crt rootCA.pem > x5chain.pem
+# 改行を \n に置換して 1 行化
+awk '{printf "%s\\n",$0}' x5chain.pem > x5chain.txt
+cat leaf.der root.der | base64 -w0 | tr '+/' '-_' | tr -d '=' > x5chain_b64.txt
 
 # 13. trustedRootCAs：根 CA を PEM のまま出力（VC の trustedRootCAs 用）
 cp rootCA.pem trustedRootCAs.txt           # そのままコピーでも可
+awk '{printf "%s\\n",$0}' rootCA.pem > trustedRootCAs.txt
 # awk 'NF' rootCA.pem > trustedRootCAs.txt # 空行を除去したい場合はこちら
