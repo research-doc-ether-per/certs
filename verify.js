@@ -1,24 +1,24 @@
-import com.nimbusds.jwt.SignedJWT    
- private val kbJwtString: String? get() = keyBindingJwt        
-    private val kbJwtPayloadJson: String? by lazy {
-        kbJwtString?.let {
-            runCatching {                                        
-                val payloadObj = SignedJWT.parse(it).payload.toJSONObject()
-                payloadObj.toJSONString()                        
-            }.getOrElse { ex -> "!! KB-JWT parse error: ${ex.message}" }
-        }
-    }
+import id.walt.sdjwt.utils.Base64Url
+private fun decodeJwtPayload(jwt: String): JsonObject? = runCatching {
+        val parts = jwt.split(".")
+        require(parts.size == 3) { "JWT format error" }
+        val json = Base64Url.decode(parts[1]).decodeToString()
+        Json.parseToJsonElement(json).jsonObject
+    }.getOrNull()
 
+    private val kbJwtPayload: JsonObject? = keyBindingJwt?.let { decodeJwtPayload(it) }
+
+    /* ---------- 调试输出 ---------- */
     init {
         println(
             """
             ===== SDJwtVC created =====
-            holderDid       = $holderDid
-            holderKeyJWK    = $holderKeyJWK
-            issuer          = $issuer
-            nbf / exp       = $notBefore / $expiration
-            vct             = $vct
-            status          = $status
+            holderDid      = $holderDid
+            holderKeyJWK   = ${holderKeyJWK?.withoutD()}
+            issuer         = $issuer
+            nbf / exp      = $notBefore / $expiration
+            vct            = $vct
+            status         = $status
             -- undisclosedPayload --
             $undisclosedPayload
             -- digestedHashes --
@@ -26,9 +26,8 @@ import com.nimbusds.jwt.SignedJWT
             -- disclosures --
             $disclosures
             -- KB-JWT payload --
-            $kbJwtPayloadJson
+            $kbJwtPayload
             ==========================
             """.trimIndent()
         )
     }
-}
