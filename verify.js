@@ -1,33 +1,16 @@
-import id.walt.sdjwt.utils.Base64Url
-private fun decodeJwtPayload(jwt: String): JsonObject? = runCatching {
-        val parts = jwt.split(".")
-        require(parts.size == 3) { "JWT format error" }
-        val json = Base64Url.decode(parts[1]).decodeToString()
-        Json.parseToJsonElement(json).jsonObject
-    }.getOrNull()
+import kotlin.jvm.JvmInline
 
-    private val kbJwtPayload: JsonObject? = keyBindingJwt?.let { decodeJwtPayload(it) }
+@OptIn(ExperimentalEncodingApi::class)
+private fun String.b64UrlDecodeToString(): String {
+    val normalized = padEnd(length + (4 - length % 4) % 4, '=')
+        .replace('-', '+').replace('_', '/')
+    val bytes = kotlin.io.encoding.Base64.Default.decode(normalized)
+    return bytes.decodeToString()
+}
 
-    /* ---------- 调试输出 ---------- */
-    init {
-        println(
-            """
-            ===== SDJwtVC created =====
-            holderDid      = $holderDid
-            holderKeyJWK   = ${holderKeyJWK?.withoutD()}
-            issuer         = $issuer
-            nbf / exp      = $notBefore / $expiration
-            vct            = $vct
-            status         = $status
-            -- undisclosedPayload --
-            $undisclosedPayload
-            -- digestedHashes --
-            ${sdPayload.digestedDisclosures}
-            -- disclosures --
-            $disclosures
-            -- KB-JWT payload --
-            $kbJwtPayload
-            ==========================
-            """.trimIndent()
-        )
+private val kbPayload: JsonObject? = keyBindingJwt?.let { jwt ->
+        runCatching {
+            val payloadB64 = jwt.split(".")[1]
+            payloadB64.b64UrlDecodeToString().let { Json.parseToJsonElement(it).jsonObject }
+        }.getOrNull()
     }
