@@ -1,46 +1,50 @@
-package id.walt.policies.policies
+//SDJWTUtils.kt
+package id.walt.sdjwt
 
-import id.walt.w3c.utils.VCFormat
-import id.walt.w3c.utils.randomUUID
-import id.walt.crypto.exceptions.VerificationException
-import id.walt.crypto.keys.Key
-import id.walt.crypto.keys.jwk.JWKKey
-import id.walt.did.dids.DidService
-import id.walt.did.dids.DidUtils
-import id.walt.policies.JwtVerificationPolicy
-import id.walt.sdjwt.JWTCryptoProvider
-import id.walt.sdjwt.SDJwtVC
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import love.forte.plugin.suspendtrans.annotation.JsPromise
-import love.forte.plugin.suspendtrans.annotation.JvmAsync
-import love.forte.plugin.suspendtrans.annotation.JvmBlocking
-import kotlin.js.JsExport
 import id.walt.sdjwt.utils.Base64Utils.base64UrlDecode
+import kotlinx.serialization.json.*
 
-expect object JWTCryptoProviderManager {
-  fun getDefaultJWTCryptoProvider(keys: Map<String, Key>): JWTCryptoProvider
+actual fun getHolderKeyJWKFromKbJwtImpl(kbJwt: String): JsonObject? {
+    return try {
+        val firstDot  = kbJwt.indexOf(".", 0)
+        println("firstDot = $firstDot")
+
+        val secondDot = kbJwt.indexOf(".", firstDot + 1)
+        println("secondDot = $secondDot")
+
+        check(firstDot >= 0 && secondDot > firstDot) { "Invalid KB-JWT format" }
+
+        val payload = kbJwt.substring(firstDot + 1, secondDot)
+        println("payload = $payload")
+
+        val payloadJsonStr = payload.base64UrlDecode().decodeToString()
+        println("payloadJsonStr = $payloadJsonStr")
+
+        val payloadJson = Json.parseToJsonElement(payloadJsonStr).jsonObject
+        println("payloadJson = $payloadJson")
+
+        payloadJson["cnf"]?.jsonObject?.get("jwk")?.jsonObject
+    } catch (e: Exception) {
+        println("getHolderKeyJWKFromKbJwtImpl error: ${e.message}")
+        null
+    }
 }
 
-class SdJwtVCSignaturePolicy(): JwtVerificationPolicy() {
-  override val name = "signature_sd-jwt-vc"
-  override val description =
-    "Checks a SD-JWT-VC credential by verifying its cryptographic signature using the key referenced by the DID in `iss`."
-  override val supportedVCFormats = setOf(VCFormat.sd_jwt_vc)
+//SDJWTUtils.kt
+package id.walt.sdjwt
 
-  private suspend fun resolveIssuerKeyFromSdJwt(sdJwt: SDJwtVC): Key {
-    val kid = sdJwt.issuer ?: randomUUID()
-    return if(DidUtils.isDidUrl(kid)) {
-      DidService.resolveToKey(kid).getOrThrow()
-    } else {
-      sdJwt.header.get("x5c")?.jsonArray?.last()?.let { x5c ->
-        return JWKKey.importPEM(x5c.jsonPrimitive.content).getOrThrow().let { JWKKey(it.exportJWK(), kid) }
-      } ?: throw UnsupportedOperationException("Resolving issuer key from SD-JWT is only supported for issuer did in kid header and PEM cert in x5c header parameter")
-    }
-  }
+import kotlinx.serialization.json.JsonObject
+
+expect fun getHolderKeyJWKFromKbJwtImpl(kbJwt: String): JsonObject?
+
+//SDJWTUtils.kt
+package id.walt.sdjwt
+
+import kotlinx.serialization.json.JsonObject
+
+actual fun getHolderKeyJWKFromKbJwtImpl(kbJwt: String): JsonObject? {
+    throw NotImplementedError("getHolderKeyJWKFromKbJwtImpl is not implemented for JS platform.")
+}
 
   @JvmBlocking
   @JvmAsync
@@ -48,16 +52,12 @@ class SdJwtVCSignaturePolicy(): JwtVerificationPolicy() {
   @JsExport.Ignore
   override suspend fun verify(credential: String, args: Any?, context: Map<String, Any>): Result<Any> {
     val sdJwtVC = SDJwtVC.parse(credential)
-    val kbJwt = sdJwtVC.keyBindingJwt
-    println("kbJwt = $kbJwt")
-
     val issuerKey = resolveIssuerKeyFromSdJwt(sdJwtVC)
     if(!sdJwtVC.isPresentation)
       return issuerKey.verifyJws(credential)
     else {
-      val holderKeyJson = sdJwtVC.holderKeyJWK ?: getHolderKeyJWKFromKbJwt(sdJwtVC)
-        ?: throw UnsupportedOperationException("Unable to resolve holder key: neither holderKeyJWK nor kb_jwt.cnf.jwk is present")
-      println("holderKeyJson = $holderKeyJson")
+      val holderKeyJson = sdJwtVC.getEffectiveHolderKeyJWK()
+          ?: throw UnsupportedOperationException("Unable to resolve holder key: neither holderKeyJWK nor kb_jwt.cnf.jwk is present")
 
       val holderKey = JWKKey.importJWK(holderKeyJson.toString()).getOrThrow()
       return sdJwtVC.verifyVC(
@@ -77,35 +77,9 @@ class SdJwtVCSignaturePolicy(): JwtVerificationPolicy() {
     }
   }
 
-  private fun getHolderKeyJWKFromKbJwt(sdJwt: SDJwtVC): JsonObject? {
-    val kbJwt = sdJwt.keyBindingJwt ?: return null
-    return try {
-      val firstDot  = jwt.indexOf('.')
-      println("firstDot = $firstDot")
-      
-      val secondDot = jwt.indexOf('.', firstDot + 1)
-      println("secondDot = $secondDot")
-      
-      check(firstDot  > 0 && secondDot > firstDot) { "Invalid KBJWT format" }
-
-      val header    = jwt.substring(0, firstDot)
-      println("header = $header")
-      
-      val payload   = jwt.substring(firstDot + 1, secondDot)
-      println("payload = $payload")
-      
-      val signature = jwt.substring(secondDot + 1)
-
-      val payloadJsonStr = payload.base64UrlDecode().decodeToString()
-      println("payloadJsonStr = $payloadJsonStr")
-
-      val payloadJson = Json.parseToJsonElement(payloadJsonStr).jsonObject
-      println("payloadJson = $payloadJson")
-
-      payloadJson["cnf"]?.jsonObject?.get("jwk")?.jsonObject
-    } catch (e: Exception) {
-      null
-    }
+  fun getEffectiveHolderKeyJWK(): JsonObject? {
+    return holderKeyJWK ?: keyBindingJwt?.jwt?.let { getHolderKeyJWKFromKbJwtImpl(it) }
   }
-}
 
+
+  
