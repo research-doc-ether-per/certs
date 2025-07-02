@@ -80,11 +80,21 @@ class SdJwtVCSignaturePolicy(): JwtVerificationPolicy() {
   private fun getHolderKeyJWKFromKbJwt(sdJwt: SDJwtVC): JsonObject? {
     val kbJwt = sdJwt.keyBindingJwt ?: return null
     return try {
-      val parts = kbJwt.split(charArrayOf('.'))
-      check(parts.size == 3) { "Invalid keyBindingJwt part count: ${parts.size} instead of 3" }}
+      val firstDot  = jwt.indexOf('.')
+      println("firstDot = $firstDot")
+      
+      val secondDot = jwt.indexOf('.', firstDot + 1)
+      println("secondDot = $secondDot")
+      
+      check(firstDot  > 0 && secondDot > firstDot) { "Invalid KBJWT format" }
 
-      val (header, payload, signature) = parts
+      val header    = jwt.substring(0, firstDot)
+      println("header = $header")
+      
+      val payload   = jwt.substring(firstDot + 1, secondDot)
       println("payload = $payload")
+      
+      val signature = jwt.substring(secondDot + 1)
 
       val payloadJsonStr = payload.base64UrlDecode().decodeToString()
       println("payloadJsonStr = $payloadJsonStr")
@@ -96,6 +106,6 @@ class SdJwtVCSignaturePolicy(): JwtVerificationPolicy() {
     } catch (e: Exception) {
       null
     }
-
+  }
 }
 
