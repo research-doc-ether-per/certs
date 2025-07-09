@@ -1,49 +1,55 @@
+// src/app.js
+require('dotenv').config();
+const express = require('express');
+const cors    = require('cors');
+const helmet  = require('helmet');
+const http    = require('http');
+const log4js  = require('log4js');
+const { requiresAuth } = require('express-openid-connect');
+const requireScope = require('./middleware/requireScope');
+const { dynamicOidc } = require('./middleware/oidc');
 
-const express = require('express')
-const router = express.Router()
-const { authorize } = require('../services/keycloak-service')
-const { requestCredential } = require('../controllers/holder-controller')
-const {
-  issueCredential,
-  offerCredential,
-} = require('../controllers/issuer-controller')
+const apiRouters   = require('./src/routes');
+const log4jsConfig = require('./config/log4js.json');
+const config       = require('./config/config.json');
 
-router.post('/credentials/issue', authorize('issuer'), issueCredential)
-router.post('/credentials/offer', authorize('issuer'), offerCredential)
+const app = express();
+let logger;
 
-router.post('/credentials/request', authorize('holder'), requestCredential)
+try {
+  // ロガー & 基本ミドルウェア
+  log4js.configure(log4jsConfig);
+  logger = log4js.getLogger('server');
+  app.use(log4js.connectLogger(log4js.getLogger('express'), { level:'info' }));
+  app.use(cors({ origin:['http://localhost:3000'], credentials:true }));
+  app.use(helmet());
+  app.use(express.urlencoded({ extended:false }));
+  app.use(express.json());
 
-module.exports = router
+  // 動的 OIDC ミドルウェア
+  app.use(dynamicOidc);
 
+  // 健康チェック
+  app.get('/health', (req, res) => res.status(200).json({ status:'OK' }));
 
-// src/middleware/requireScope.js
+  // /api ルートの保護
+  app.use(
+    '/api',
+    requiresAuth(),              // トークン検証
+    requireScope(['openid']),    // スコープ検証
+    apiRouters
+  );
 
-/**
- * 必要な Scope をチェックするミドルウェアを生成
- * @param {string[]} requiredScopes - 要求されるスコープ名の配列
- * @returns {Function} Express用ミドルウェア関数
- */
-function requireScope(requiredScopes) {
-  return (req, res, next) => {
-    // express-openid-connect の accessToken オブジェクトを取得
-    const accessToken = req.oidc && req.oidc.accessToken;
-    if (!accessToken) {
-      return res.status(401).json({ error: 'アクセストークンが存在しません' });
-    }
+  // サーバ起動
+  const host = '0.0.0.0';
+  const port = process.env.PORT || 10010;
+  http.createServer(app).listen(port, host, () => {
+    logger.info(`Server listening on ${host}:${port}`);
+  });
 
-    // Token のクレームから scope の文字列を取得し、配列に変換
-    const claims = accessToken.claims();
-    const tokenScopes = (claims.scope || '').split(' ');
-
-    // 必要なスコープがすべて含まれているか確認
-    const hasAll = requiredScopes.every(s => tokenScopes.includes(s));
-    if (!hasAll) {
-      return res.status(403).json({ error: 'スコープが不足しています' });
-    }
-
-    // 問題なければ次のハンドラへ
-    next();
-  };
+} catch (err) {
+  logger.error(`Server Error: ${err.stack}`);
+  process.exit(1);
 }
 
-module.exports = requireScope;
+module.exports = app;
