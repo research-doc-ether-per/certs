@@ -1,26 +1,20 @@
-// src/middleware/introspect.js
-const axios = require('axios');
+// src/middleware/requireScope.js
+/**
+ * 要求されるスコープをチェック
+ * @param {string[]} requiredScopes 
+ */
+function requireScope(requiredScopes) {
+  return (req, res, next) => {
+    // Introspection 結果を詰めた req.user を前提にする
+    const scopeString = req.user?.scope || '';
+    const tokenScopes = scopeString.split(' ');
 
-async function introspect(req, res, next) {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).end();
-
-  try {
-    const url = `${process.env.ISSUER_BASE_URL}/protocol/openid-connect/token/introspect`;
-    const params = new URLSearchParams({
-      token,
-      client_id:     process.env.CLIENT_ID,
-      client_secret: process.env.CLIENT_SECRET,
-    });
-    const { data } = await axios.post(url, params.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-    if (!data.active) return res.status(401).end();
-    req.user = data;
+    const hasAll = requiredScopes.every(s => tokenScopes.includes(s));
+    if (!hasAll) {
+      return res.status(403).json({ error: 'Insufficient scope' });
+    }
     next();
-  } catch (err) {
-    next(err);
   }
 }
 
-module.exports = introspect;
+module.exports = requireScope;
