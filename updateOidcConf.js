@@ -3,15 +3,19 @@ const config = require('../config/waltid.json')
 const log4js = require('log4js')
 const logger = log4js.getLogger('waltidDB')
 
-// 設定値：再接続の最大回数と待機時間（ミリ秒）
+// 設定値
 const RETRY_MAX = Number(config.DB?.retryMax ?? 2)
 const RETRY_DELAY = Number(config.DB?.retryDelay ?? 1000)
+
+// 現在の pg.Pool インスタンス（更新可能）
+let internalPool = createNewPool()
+let isRecreating = false // 同時再生成防止
 
 /**
  * 接続プールを作成する関数
  */
 function createNewPool() {
-  return new Pool({
+  const pool = new Pool({
     host: config.DB.host,
     port: config.DB.port,
     user: config.DB.user,
@@ -21,10 +25,34 @@ function createNewPool() {
     idleTimeoutMillis: config.DB.idleTimeoutMillis,
     ssl: config.DB.ssl,
   })
-}
 
-// 現在の pg.Pool インスタンス（更新可能）
-let internalPool = createNewPool()
+  // ⚠️ on('error') はここで一度だけ設定（再生成されても大丈夫なように）
+  pool.on('error', async (error) => {
+    logger.error('Pool internal error detected:', error.message)
+
+    if (isRecreating) {
+      logger.warn('Pool is already being recreated. Skipping duplicate attempt.')
+      return
+    }
+
+    isRecreating = true
+
+    try {
+      logger.warn('Recreating pool due to internal pool error...')
+      await internalPool.end().catch(e =>
+        logger.warn(`Failed to close pool during on(error): ${e.message}`)
+      )
+      internalPool = createNewPool()
+      logger.info('Pool successfully recreated after internal error.')
+    } catch (e) {
+      logger.error('Failed to recreate pool in on(error):', e.message)
+    } finally {
+      isRecreating = false
+    }
+  })
+
+  return pool
+}
 
 /**
  * 接続系エラーかどうかを判定する関数
