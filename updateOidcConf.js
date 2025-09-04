@@ -3,11 +3,12 @@ const config = require('../config/waltid.json')
 const log4js = require('log4js')
 const logger = log4js.getLogger('waltidDB')
 
-const RETRY_MAX   = Number(config.DB?.retryMax ?? 2)
+// 設定値：再接続の最大回数と待機時間（ミリ秒）
+const RETRY_MAX = Number(config.DB?.retryMax ?? 2)
 const RETRY_DELAY = Number(config.DB?.retryDelay ?? 1000)
 
 /**
- * 接続プールを生成
+ * 接続プールを作成する関数
  */
 function createNewPool() {
   return new Pool({
@@ -22,10 +23,12 @@ function createNewPool() {
   })
 }
 
-// 初期プール
-let pool = createNewPool()
+// 現在の pg.Pool インスタンス（更新可能）
+let internalPool = createNewPool()
 
-// 接続エラー判定
+/**
+ * 接続系エラーかどうかを判定する関数
+ */
 function isConnectionError(error) {
   return (
     error.code === 'ECONNRESET' ||
@@ -36,31 +39,36 @@ function isConnectionError(error) {
   )
 }
 
-// 自動再接続付き query の差し替え（インスタンスに直接上書き）
-pool.query = async function (text, params) {
+/**
+ * 自動再接続付きのカスタム query 関数
+ */
+async function customQuery(text, params) {
   for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
     try {
-      return await Pool.prototype.query.call(this, text, params)
+      return await Pool.prototype.query.call(internalPool, text, params)
     } catch (error) {
       const label = `(${attempt + 1}/${RETRY_MAX + 1})`
       logger.error(`Query error ${label}: ${error.message}`)
 
-      if (!isConnectionError(error)) throw error
+      if (!isConnectionError(error)) {
+        throw error
+      }
 
       if (attempt < RETRY_MAX) {
         logger.warn(`Connection error detected. Recreating pool and retrying ${label}...`)
+
         try {
-          await pool.end().catch(e => logger.warn(`Failed to end old pool: ${e.message}`))
-          pool = createNewPool()
-          // 新プールにも再帰的に query を上書き
-          pool.query = arguments.callee.bind(pool)
-          await new Promise(res => setTimeout(res, RETRY_DELAY))
+          await internalPool.end().catch(e =>
+            logger.warn(`Failed to close old pool: ${e.message}`)
+          )
+          internalPool = createNewPool()
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
         } catch (reconnectError) {
           logger.error(`Failed to recreate pool: ${reconnectError.message}`)
           throw reconnectError
         }
       } else {
-        logger.error('Retry limit reached. Throwing WALLET_DB_CONNECTION_REFUSED error.')
+        logger.error('Retry limit reached. Throwing WALTID_DB_CONNECTION_REFUSED error.')
         const finalError = new Error('WALTID DB Connection refused')
         finalError.code = 'WALTID_DB_CONNECTION_REFUSED'
         finalError.original = error
@@ -70,12 +78,15 @@ pool.query = async function (text, params) {
   }
 }
 
-// 必要なら connect() も暴露（トランザクション用）
+/**
+ * getPool() - query を上書きし、他のすべては internalPool のままにする
+ */
 function getPool() {
-  return pool
+  return Object.assign(Object.create(internalPool), {
+    query: customQuery,
+  })
 }
 
 module.exports = {
-  query: pool.query,
   getPool,
 }
