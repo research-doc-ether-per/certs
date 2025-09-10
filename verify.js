@@ -1,71 +1,78 @@
-// 检测：紧凑 JWS（JWT）是否结构正确，并报告 header/payload 可解析、signature 可解码
-const b64uRe = /^[A-Za-z0-9_-]+={0,2}$/;
+// Node >=16（内置支持 'base64url'）。只做“结构解析”，不做验签。
 
-function checkCompactJws(t) {
-  const parts = String(t || '').split('.');
-  if (parts.length !== 3 || parts.some(p => !p || !b64uRe.test(p))) {
-    return { ok: false, reason: 'bad parts or base64url' };
+const B64URL_RE = /^[A-Za-z0-9_-]+={0,2}$/;
+
+/** 解析 3パートJWS（JWT）。OK⇒{ header, payload, signature(Buffer) }／NG⇒throw */
+function parseCompactJwsStrict(token) {
+  if (typeof token !== 'string') throw new Error('token must be a string');
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('not a 3-part JWS');
+  const [h, p, s] = parts;
+  if (![h, p, s].every(x => x && B64URL_RE.test(x))) {
+    throw new Error('JWS parts are not base64url');
   }
+  let header, payload, signature;
   try {
-    const header = JSON.parse(Buffer.from(parts[0].replace(/=/g,''), 'base64url').toString('utf8'));
-    const payload = JSON.parse(Buffer.from(parts[1].replace(/=/g,''), 'base64url').toString('utf8'));
-    // 签名段：只需能 base64url 解码为 Buffer（不是 JSON）
-    Buffer.from(parts[2].replace(/=/g,''), 'base64url');
-    return { ok: true, header, payload, signatureDecodable: true };
-  } catch (e) {
-    return { ok: false, reason: 'header/payload not JSON or signature not base64url', error: String(e) };
-  }
+    header  = JSON.parse(Buffer.from(h.replace(/=/g,''), 'base64url').toString('utf8'));
+  } catch { throw new Error('header is not valid JSON'); }
+  try {
+    payload = JSON.parse(Buffer.from(p.replace(/=/g,''), 'base64url').toString('utf8'));
+  } catch { throw new Error('payload is not valid JSON'); }
+  try {
+    signature = Buffer.from(s.replace(/=/g,''), 'base64url'); // 署名はバイト列
+  } catch { throw new Error('signature is not base64url'); }
+  return { header, payload, signature };
 }
 
-// 识别格式：纯 JWS 或 SD-JWT combined，并返回签名可解码性
-function detectTokenFormat(input) {
+/** 解析 SD-JWT combined：<JWS>~<disc>~...(~<kb-jwt>任意)。OK⇒对象／NG⇒throw */
+function parseSdJwtCombinedStrict(input) {
+  if (typeof input !== 'string') throw new Error('token must be a string');
+  const parts = input.split('~');
+  if (parts.length < 2) throw new Error('not SD-JWT combined (no "~")');
+
+  // 先頭は必ず JWS
+  const jws = parseCompactJwsStrict(parts[0]);
+
+  // 末尾が kb-jwt かを判定（JWS として通れば kb-jwt とみなす）
+  let kbJwt = null;
+  let upto = parts.length;
+  try {
+    kbJwt = parseCompactJwsStrict(parts[parts.length - 1]);
+    upto--; // 最後の一つを kb-jwt として扱う
+  } catch { /* 末尾は kb-jwt ではない → 無視 */ }
+
+  // 各 disclosure は base64url(JSON想定) を厳格チェック
+  const disclosures = [];
+  for (let i = 1; i < upto; i++) {
+    const d = parts[i]?.trim();
+    if (!d || !B64URL_RE.test(d)) {
+      throw new Error(`disclosure[${i-1}] is not base64url`);
+    }
+    try {
+      const json = Buffer.from(d.replace(/=/g,''), 'base64url').toString('utf8');
+      JSON.parse(json); // 多くは ["salt","claim","value"] 形式
+    } catch {
+      throw new Error(`disclosure[${i-1}] is not valid JSON`);
+    }
+    disclosures.push(d);
+  }
+  return { jws, disclosures, kbJwt };
+}
+
+/** 入口函数：自动判断是纯 JWS 还是 SD-JWT combined；OK 返回结构，NG 直接 throw */
+function parseTokenStrict(input) {
   const s = (input ?? '').toString().trim();
-  if (!s) return { valid: false, reason: 'empty' };
-
-  const dots = (s.match(/\./g) || []).length;
-  const tildes = (s.match(/~/g) || []).length;
-
-  // 纯 JWS（JWT）
-  if (tildes === 0 && dots === 2) {
-    const r = checkCompactJws(s);
-    return r.ok ? { valid: true, type: 'jws', jws: r } : { valid: false, type: 'jws', reason: r.reason };
+  if (!s) throw new Error('empty token');
+  if (s.includes('~')) {
+    const r = parseSdJwtCombinedStrict(s);
+    return { type: 'sd-jwt-combined', ...r };
   }
-
-  // SD-JWT combined：<JWS>~<disc>~...(~<kb-jwt> 可选)
-  if (tildes >= 1) {
-    const parts = s.split('~');
-    const jwsCheck = checkCompactJws(parts[0]);
-    if (!jwsCheck.ok) return { valid: false, type: 'sd-jwt-combined', reason: 'first part not JWS' };
-
-    // 最后一段可能是 kb-jwt
-    let hasKbJwt = false, kb = null, upto = parts.length;
-    if (checkCompactJws(parts[parts.length - 1]).ok) {
-      hasKbJwt = true;
-      kb = checkCompactJws(parts[parts.length - 1]);
-      upto--;
-    }
-
-    // 校验每个 disclosure 是 base64url（可选：尝试 JSON.parse）
-    const disclosures = [];
-    for (let i = 1; i < upto; i++) {
-      const d = parts[i].trim();
-      if (!d || !b64uRe.test(d)) return { valid: false, type: 'sd-jwt-combined', reason: `disclosure[${i-1}] not base64url` };
-      try { JSON.parse(Buffer.from(d.replace(/=/g,''), 'base64url').toString('utf8')); } catch {}
-      disclosures.push(d);
-    }
-
-    return {
-      valid: true,
-      type: 'sd-jwt-combined',
-      jws: jwsCheck,                    // 含 signatureDecodable
-      disclosuresCount: disclosures.length,
-      hasKbJwt,
-      kbJwt: kb                         // 若存在，也含 signatureDecodable
-    };
-  }
-
-  return { valid: false, reason: 'neither compact JWS nor SD-JWT combined' };
+  const r = parseCompactJwsStrict(s);
+  return { type: 'jws', ...r };
 }
 
-module.exports = { detectTokenFormat, checkCompactJws };
-
+module.exports = {
+  parseCompactJwsStrict,
+  parseSdJwtCombinedStrict,
+  parseTokenStrict,
+};
