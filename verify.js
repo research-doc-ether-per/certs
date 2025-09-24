@@ -121,6 +121,15 @@
     Must accompany _sd when used, at any object level.</div>
   </div>
 
+        <div class="term" id="vct">
+    <div class="grid">
+      <div class="key">IRI</div><div class="iri"><a href="http://localhost:3000/vocab#vct">http://localhost:3000/vocab#vct</a></div>
+      <div class="key">Label</div><div>vct</div>
+      <div class="key">Range</div><div class="iri"><a href="http://www.w3.org/2000/01/rdf-schema#Class">rdfs:Class</a></div>
+      <div class="key">Comment</div><div>Credential type identifier used in SD-JWT payloads.</div>
+    </div>
+  </div>
+
   <h2 class="classes">Classes</h2>
   <div class="term class" id="credentialInformation">
     <div class="grid">
