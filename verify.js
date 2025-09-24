@@ -91,11 +91,11 @@
 
   <h2 class="global">Global Properties</h2>
   <div class="term global" id="sub">
-    <div class="grid">
+     <div class="grid">
       <div class="key">IRI</div><div class="iri"><a href="http://localhost:3000/vocab#sub">http://localhost:3000/vocab#sub</a></div>
       <div class="key">Label</div><div>sub</div>
-      <div class="key">Range</div><div class="iri"><a href="https://schema.org/URL">schema:URL</a></div>
-      <div class="key">Comment</div><div>Subject identifier (JWT 'sub'), typically the holder's DID or another subject ID. This is a global property at the credential level.</div>
+      <div class="key">Range</div><div class="iri"><a href="http://www.w3.org/2000/01/rdf-schema#Resource">rdfs:Resource</a></div>
+      <div class="key">Comment</div><div>Subject identifier (JWT 'sub'), typically the holder's DID or another subject ID.</div>
     </div>
   </div>
 
@@ -173,6 +173,7 @@
     <div class="grid">
       <div class="key">IRI</div><div class="iri"><a href="https://www.w3.org/2018/credentials#issuanceDate">https://www.w3.org/2018/credentials#issuanceDate</a></div>
       <div class="key">Label</div><div>issuanceDate</div>
+         <div class="key">Domain</div><div>credentialInformation</div>
       <div class="key">Range</div><div class="iri"><a href="https://www.w3.org/2001/XMLSchema#dateTime">xsd:dateTime</a></div>
       <div class="key">Comment</div><div>Date when the credential was issued.</div>
     </div>
@@ -182,6 +183,7 @@
     <div class="grid">
       <div class="key">IRI</div><div class="iri"><a href="https://www.w3.org/2018/credentials#expirationDate">https://www.w3.org/2018/credentials#expirationDate</a></div>
       <div class="key">Label</div><div>expirationDate</div>
+         <div class="key">Domain</div><div>credentialInformation</div>
       <div class="key">Range</div><div class="iri"><a href="https://www.w3.org/2001/XMLSchema#dateTime">xsd:dateTime</a></div>
       <div class="key">Comment</div><div>Date when the credential expires, if applicable.</div>
     </div>
