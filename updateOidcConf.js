@@ -1,68 +1,92 @@
 {
   "@context": {
     "@version": 1.1,
-    "schema": "https://schema.org/",
-    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "id": "@id",
+    "type": "@type",
 
-    "sub": {
-      "@id": "http://localhost:3000/vocab#sub",
-      "@type": "@id"
-    },
-    "credentialInformation": {
-      "@id": "http://localhost:3000/vocab#credentialInformation"
-    },
-    "CustomCredential": {
-      "@id": "http://localhost:3000/vocab#CustomCredential"
+    "VerifiableCredential": {
+      "@id": "https://www.w3.org/2018/credentials#VerifiableCredential"
     },
 
-    "certName": {
-      "@id": "http://localhost:3000/vocab#certName",
-      "@type": "xsd:string"
-    },
-    "certExplanation": {
-      "@id": "http://localhost:3000/vocab#certExplanation",
-      "@type": "xsd:string"
-    },
-    "docId": {
-      "@id": "http://localhost:3000/vocab#docId",
-      "@type": "xsd:string"
-    },
-    "organization": {
-      "@id": "http://localhost:3000/vocab#organization",
-      "@type": "xsd:string"
-    },
-    "image": {
-      "@id": "https://schema.org/image",
+    "issuer": {
+      "@id": "https://www.w3.org/2018/credentials#issuer",
       "@type": "@id"
     },
     "issuanceDate": {
       "@id": "https://www.w3.org/2018/credentials#issuanceDate",
-      "@type": "xsd:dateTime"
+      "@type": "https://www.w3.org/2001/XMLSchema#dateTime"
     },
     "expirationDate": {
       "@id": "https://www.w3.org/2018/credentials#expirationDate",
-      "@type": "xsd:dateTime"
+      "@type": "https://www.w3.org/2001/XMLSchema#dateTime"
     },
-    "issuedAt": {
-      "@id": "http://localhost:3000/vocab#issuedAt",
-      "@type": "xsd:date"
+
+    "sub": {
+      "@id": "http://localhost:3000/vocab#sub",
+      "@type": "https://schema.org/URL"
     },
-    "category": {
-      "@id": "http://localhost:3000/vocab#category",
-      "@type": "xsd:string"
-    },
-    "position": {
-      "@id": "http://localhost:3000/vocab#position",
-      "@type": "xsd:string"
-    },
-    "from": {
-      "@id": "http://localhost:3000/vocab#from",
-      "@type": "xsd:date"
-    },
-    "to": {
-      "@id": "http://localhost:3000/vocab#to",
-      "@type": "xsd:date"
+
+    "credentialSubject": {
+      "@id": "https://www.w3.org/2018/credentials#credentialSubject",
+      "@context": {
+        "credentialInformation": {
+          "@id": "http://localhost:3000/vocab#credentialInformation",
+          "@context": {
+            "certName": {
+              "@id": "http://localhost:3000/vocab#certName",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "certExplanation": {
+              "@id": "http://localhost:3000/vocab#certExplanation",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "issuanceDate": {
+              "@id": "https://schema.org/dateIssued",
+              "@type": "https://www.w3.org/2001/XMLSchema#date"
+            },
+            "expirationDate": {
+              "@id": "https://schema.org/validThrough",
+              "@type": "https://www.w3.org/2001/XMLSchema#date"
+            },
+            "image": {
+              "@id": "https://schema.org/image",
+              "@type": "https://schema.org/URL"
+            },
+            "docId": {
+              "@id": "https://schema.org/identifier",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "organization": {
+              "@id": "https://schema.org/organization",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "issuedAt": {
+              "@id": "http://localhost:3000/vocab#issuedAt",
+              "@type": "https://www.w3.org/2001/XMLSchema#date"
+            },
+            "type": {
+              "@id": "http://localhost:3000/vocab#type",
+              "@type": "@id"
+            },
+            "category": {
+              "@id": "http://localhost:3000/vocab#category",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "position": {
+              "@id": "http://localhost:3000/vocab#position",
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
+            },
+            "from": {
+              "@id": "https://schema.org/startDate",
+              "@type": "https://www.w3.org/2001/XMLSchema#date"
+            },
+            "to": {
+              "@id": "https://schema.org/endDate",
+              "@type": "https://www.w3.org/2001/XMLSchema#date"
+            }
+          }
+        }
+      }
     }
   }
 }
-
