@@ -99,6 +99,28 @@
     </div>
   </div>
 
+   <div class="term global" id="_sd">
+  <div class="grid">
+    <div class="key">IRI</div>
+    <div class="iri"><a href="http://localhost:3000/vocab#_sd">http://localhost:3000/vocab#_sd</a></div>
+    <div class="key">Label</div><div>_sd</div>
+    <div class="key">Range</div><div class="iri"><a href="https://www.w3.org/2001/XMLSchema#json">xsd:json</a></div>
+    <div class="key">Comment</div>
+    <div>Array of hash digests representing selectively disclosable claims in SD-JWT.</div>
+  </div>
+</div>
+
+<div class="term global" id="_sd_alg">
+  <div class="grid">
+    <div class="key">IRI</div>
+    <div class="iri"><a href="http://localhost:3000/vocab#_sd_alg">http://localhost:3000/vocab#_sd_alg</a></div>
+    <div class="key">Label</div><div>_sd_alg</div>
+    <div class="key">Range</div><div class="iri"><a href="https://www.w3.org/2001/XMLSchema#string">xsd:string</a></div>
+    <div class="key">Comment</div>
+    <div>Hash algorithm used for generating _sd digests.  
+    Must accompany _sd when used, at any object level.</div>
+  </div>
+
   <h2 class="classes">Classes</h2>
   <div class="term class" id="credentialInformation">
     <div class="grid">
