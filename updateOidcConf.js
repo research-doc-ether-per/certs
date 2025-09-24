@@ -4,9 +4,7 @@
     "id": "@id",
     "type": "@type",
 
-    "VerifiableCredential": {
-      "@id": "https://www.w3.org/2018/credentials#VerifiableCredential"
-    },
+    "VerifiableCredential": "https://www.w3.org/2018/credentials#VerifiableCredential",
 
     "issuer": {
       "@id": "https://www.w3.org/2018/credentials#issuer",
@@ -23,7 +21,7 @@
 
     "sub": {
       "@id": "http://localhost:3000/vocab#sub",
-      "@type": "https://schema.org/URL"
+      "@type": "@id"
     },
 
     "credentialSubject": {
@@ -41,23 +39,23 @@
               "@type": "https://www.w3.org/2001/XMLSchema#string"
             },
             "issuanceDate": {
-              "@id": "https://schema.org/dateIssued",
-              "@type": "https://www.w3.org/2001/XMLSchema#date"
+              "@id": "https://www.w3.org/2018/credentials#issuanceDate",
+              "@type": "https://www.w3.org/2001/XMLSchema#dateTime"
             },
             "expirationDate": {
-              "@id": "https://schema.org/validThrough",
-              "@type": "https://www.w3.org/2001/XMLSchema#date"
+              "@id": "https://www.w3.org/2018/credentials#expirationDate",
+              "@type": "https://www.w3.org/2001/XMLSchema#dateTime"
             },
             "image": {
               "@id": "https://schema.org/image",
-              "@type": "https://schema.org/URL"
+              "@type": "@id"
             },
             "docId": {
-              "@id": "https://schema.org/identifier",
+              "@id": "http://localhost:3000/vocab#docId",
               "@type": "https://www.w3.org/2001/XMLSchema#string"
             },
             "organization": {
-              "@id": "https://schema.org/organization",
+              "@id": "http://localhost:3000/vocab#organization",
               "@type": "https://www.w3.org/2001/XMLSchema#string"
             },
             "issuedAt": {
@@ -66,7 +64,7 @@
             },
             "type": {
               "@id": "http://localhost:3000/vocab#type",
-              "@type": "@id"
+              "@type": "https://www.w3.org/2001/XMLSchema#string"
             },
             "category": {
               "@id": "http://localhost:3000/vocab#category",
@@ -77,11 +75,11 @@
               "@type": "https://www.w3.org/2001/XMLSchema#string"
             },
             "from": {
-              "@id": "https://schema.org/startDate",
+              "@id": "http://localhost:3000/vocab#from",
               "@type": "https://www.w3.org/2001/XMLSchema#date"
             },
             "to": {
-              "@id": "https://schema.org/endDate",
+              "@id": "http://localhost:3000/vocab#to",
               "@type": "https://www.w3.org/2001/XMLSchema#date"
             }
           }
