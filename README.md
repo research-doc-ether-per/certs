@@ -1,9 +1,1 @@
-- 無料（Community Stack）
-  - ステータス管理用のサーバーを用意し、VC発行リクエスト時にVC本体へステータスを指す情報（credentialStatus）を埋め込み、その参照先を通じて管理する。
-- 有料（Enterprise Stack）
-  - walt.id の「Credential Status Service」を使い、発行時は API でステータス用インデックスを取得して VC 本体へ credentialStatus を自動埋め込み、その後の撤回・一時停止などの状態更新と公開も同 API で行う
-  - 価格
-    - https://walt.id/pricing
-        - 公開されてない
-    - https://www.capterra.com/p/235821/walt-id-Identity-Infrastructure/
-        - Enterprise €2,500/月
+
