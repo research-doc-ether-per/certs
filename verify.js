@@ -1,50 +1,41 @@
-app.get('/status/:id.json', (req, res) => {
-  const id = String(req.params.id).replace(/[^0-9A-Za-z_-]/g, '');
-  const file = path.join(process.cwd(), 'public', 'status', `${id}.json`);
+package your.pkg.fetch
 
-  fs.readFile(file, 'utf8', (err, data) => {
-    if (err) {
-      const body = JSON.stringify({ error: 'not found' });
-      console.log(`[status] 404 /status/${id}.json -> ${body.length} bytes`);
-      return res.status(404)
-        .type('application/json; charset=utf-8')
-        .set({
-          'Cache-Control': 'no-store',
-          'Content-Length': Buffer.byteLength(body, 'utf8').toString(),
-          'Content-Encoding': 'identity',
-          'Accept-Ranges': 'none',
-          'Connection': 'close'
-        })
-        .send(body);
+import id.walt.policies.policies.status.CredentialFetcher
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import kotlinx.serialization.json.Json
+
+/**
+ * CredentialFetcher への拡張関数：
+ * - Bitstring/W3C 用（JSON 期待）
+ * - GET に Content-Type を付けない
+ * - Accept は application/json
+ * - body を「一度だけ」読み、非空を保証して返す
+ */
+suspend fun CredentialFetcher.fetchJson(
+    httpClient: HttpClient, // 既存の HttpClient を渡す
+    url: String
+): Result<String> = runCatching {
+    val resp: HttpResponse = httpClient.get(url) {
+        header(HttpHeaders.Accept, "application/json")
+        // Content-Type は GET なので付けない
     }
+    require(resp.status.isSuccess()) { "HTTP ${resp.status} for $url" }
 
-    const body = (data ?? '').trim();
-    if (!body) {
-      const errBody = JSON.stringify({ error: 'empty status file' });
-      console.log(`[status] 500 /status/${id}.json -> 0 bytes`);
-      return res.status(500)
-        .type('application/json; charset=utf-8')
-        .set({
-          'Cache-Control': 'no-store',
-          'Content-Length': Buffer.byteLength(errBody, 'utf8').toString(),
-          'Content-Encoding': 'identity',
-          'Accept-Ranges': 'none',
-          'Connection': 'close'
-        })
-        .send(errBody);
+    val text = resp.bodyAsText()              // ★ 一度だけ読む
+    // ログしたい場合は長さのみ推奨
+    // println("[fetchJson] url=$url len=${text.length}")
+    require(text.isNotBlank()) { "Empty body for $url" }
+
+    // Bitstring ルートでは JSON を期待（念のため先頭確認）
+    require(text.first() == '{') {
+        "Unexpected content for $url: expected JSON starting with '{'"
     }
+    text
+}
 
-    console.log(`[status] 200 /status/${id}.json -> ${body.length} bytes`);
-    return res.status(200)
-      .type('application/json; charset=utf-8')
-      .set({
-        'Cache-Control': 'no-store',
-        'Content-Length': Buffer.byteLength(body, 'utf8').toString(),
-        'Content-Encoding': 'identity',   
-        'Accept-Ranges': 'none',         
-        'Connection': 'close'            
-      })
-      .send(body);
-  });
-});
 
+val statusListContent: String = fetcher.fetchJson(httpClient, entry.uri)
+    .getOrElse { throw StatusRetrievalError(it.message ?: "Status credential download error") }
