@@ -1,55 +1,31 @@
-// utils/bitstring.js (Node 20+)
 import zlib from 'zlib';
 
-/** 指定ビット数で 0 埋めのビットセットを作成 */
-export function createZeroBitset(sizeBits) {
-  const sizeBytes = Math.ceil(sizeBits / 8);
-  return Buffer.alloc(sizeBytes, 0);
-}
+/**
+ * encodedList の整合性チェック（公開前のセルフテスト）
+ * - 仕様: encodedList は「Multibase base64url」形式（先頭に 'u'）
+ * - 仕様: 中身は GZIP 圧縮されたビット列で、解凍後のバイト長は sizeBits/8（切り上げ）と一致すること
+ *
+ * @param {string} encodedList - 'u' + base64url な文字列（例: "uH4sIA..."）
+ * @param {number} sizeBits    - ステータスリストのビット数（= 同時管理できる VC 枚数）
+ * @throws {Error} 形式や長さが不正な場合に例外を投げる
+ */
+export function assertEncodedListLength(encodedList, sizeBits) {
+  // 必須: Multibase の base64url は先頭が 'u'
+  if (!encodedList || encodedList[0] !== 'u') {
+    throw new Error("encodedList は 'u' で始まる Multibase base64url である必要があります");
+  }
 
-/** index のビットを 0/1 に設定（1 = 無効、0 = 有効） */
-export function setBit(buf, index, bit) {
-  const byteIndex = Math.floor(index / 8);
-  const bitIndex = index % 8;
-  if (bit) buf[byteIndex] |= (1 << bitIndex);
-  else buf[byteIndex] &= ~(1 << bitIndex);
-  return buf;
-}
+  // 期待されるバイト数: sizeBits を 8 で割って切り上げ
+  const expectBytes = Math.ceil(sizeBits / 8);
 
-/** GZIP → Base64URL（=/-、パディング無し） */
-export function gzipBase64Url(buf) {
-  const gz = zlib.gzipSync(buf);
-  return gz.toString('base64url'); // Node 20+ OK
-}
+  // 'u' を外して base64url → Buffer
+  const gz = Buffer.from(encodedList.slice(1), 'base64url');
 
-/** Multibase の base64url へ（先頭に 'u' を付ける。重複付与はしない） */
-export function toMultibaseBase64Url(b64url) {
-  return b64url.startsWith('u') ? b64url : `u${b64url}`;
-}
+  // GZIP 解凍（無効なデータならここで例外が発生）
+  const raw = zlib.gunzipSync(gz);
 
-/** まとめ：GZIP → Base64URL → Multibase（'u' + …） */
-export function gzipBase64UrlMultibase(buf) {
-  return toMultibaseBase64Url(gzipBase64Url(buf));
-}
-
-/** 後方互換（呼ばれても Multibase base64url を返すように統一） */
-export const gzipBase64 = gzipBase64UrlMultibase;
-
-/** Bitstring Status List Credential(JSON) を組み立て */
-export function buildStatusListCredentialJson({ url, purpose, encodedList, issuerDid }) {
-  // 安全のため、ここでも 'u' を強制
-  const multibaseEncoded = toMultibaseBase64Url(encodedList);
-  return {
-    "@context": ["https://www.w3.org/ns/credentials/v2"],
-    "id": url,
-    "type": ["VerifiableCredential", "BitstringStatusListCredential"],
-    "issuer": issuerDid || "did:example:issuer",
-    "validFrom": new Date().toISOString(),
-    "credentialSubject": {
-      "id": `${url}#list`,
-      "type": "BitstringStatusList",
-      "statusPurpose": purpose,
-      "encodedList": multibaseEncoded
-    }
-  };
+  // 解凍後のバイト長が期待値と一致するか検証
+  if (raw.length !== expectBytes) {
+    throw new Error(`encodedList の長さが不正: 実際 ${raw.length} bytes / 期待 ${expectBytes} bytes (sizeBits=${sizeBits})`);
+  }
 }
