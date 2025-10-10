@@ -1,24 +1,55 @@
-  val statusListAny: Any = if (isJson) {
-            logger.debug { "Detected JSON status list, parsing as W3C Bitstring JSON…" }
+// utils/bitstring.js (Node 20+)
+import zlib from 'zlib';
 
-            val json = Json { ignoreUnknownKeys = true; isLenient = true }
-            val payload = json.parseToJsonElement(statusListContent).jsonObject
+/** 指定ビット数で 0 埋めのビットセットを作成 */
+export function createZeroBitset(sizeBits) {
+  const sizeBytes = Math.ceil(sizeBits / 8);
+  return Buffer.alloc(sizeBytes, 0);
+}
 
-            // BitstringStatusListCredential: 顶层有 credentialSubject
-            val credentialSubject = payload["credentialSubject"]?.jsonObject
-                ?: throw StatusRetrievalError("Missing 'credentialSubject' in status list JSON")
+/** index のビットを 0/1 に設定（1 = 無効、0 = 有効） */
+export function setBit(buf, index, bit) {
+  const byteIndex = Math.floor(index / 8);
+  const bitIndex = index % 8;
+  if (bit) buf[byteIndex] |= (1 << bitIndex);
+  else buf[byteIndex] &= ~(1 << bitIndex);
+  return buf;
+}
 
-            // 反序列化为 W3CStatusContent（与 Walt.id 的模型对齐）
-            json.decodeFromJsonElement(
-                id.walt.policies.policies.status.model.W3CStatusContent.serializer(),
-                credentialSubject
-            )
-        } else {
-            logger.debug { "Detected JWT status list, parsing via reader…" }
-            reader.read(statusListContent)
-                .getOrElse { throw StatusRetrievalError(it.message ?: "Status credential parsing error") }
-        }
+/** GZIP → Base64URL（=/-、パディング無し） */
+export function gzipBase64Url(buf) {
+  const gz = zlib.gzipSync(buf);
+  return gz.toString('base64url'); // Node 20+ OK
+}
 
-        // 5) 将 Any 转为 K（在本基类中做一次受控断言）
-        @Suppress("UNCHECKED_CAST")
-        val statusList: K = statusListAny as K
+/** Multibase の base64url へ（先頭に 'u' を付ける。重複付与はしない） */
+export function toMultibaseBase64Url(b64url) {
+  return b64url.startsWith('u') ? b64url : `u${b64url}`;
+}
+
+/** まとめ：GZIP → Base64URL → Multibase（'u' + …） */
+export function gzipBase64UrlMultibase(buf) {
+  return toMultibaseBase64Url(gzipBase64Url(buf));
+}
+
+/** 後方互換（呼ばれても Multibase base64url を返すように統一） */
+export const gzipBase64 = gzipBase64UrlMultibase;
+
+/** Bitstring Status List Credential(JSON) を組み立て */
+export function buildStatusListCredentialJson({ url, purpose, encodedList, issuerDid }) {
+  // 安全のため、ここでも 'u' を強制
+  const multibaseEncoded = toMultibaseBase64Url(encodedList);
+  return {
+    "@context": ["https://www.w3.org/ns/credentials/v2"],
+    "id": url,
+    "type": ["VerifiableCredential", "BitstringStatusListCredential"],
+    "issuer": issuerDid || "did:example:issuer",
+    "validFrom": new Date().toISOString(),
+    "credentialSubject": {
+      "id": `${url}#list`,
+      "type": "BitstringStatusList",
+      "statusPurpose": purpose,
+      "encodedList": multibaseEncoded
+    }
+  };
+}
