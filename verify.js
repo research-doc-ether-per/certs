@@ -1,31 +1,23 @@
-
 private fun extractBitValue(
     bytes: ByteArray,
-    index: ULong,      
-    bitSize: UInt       
+    index: ULong,
+    bitSize: UInt
 ): List<Char> {
     val totalBits = bytes.size * 8
+    val startBit = (index * bitSize.toULong()).toInt()
+    val endBit = startBit + bitSize.toInt()
 
-    val startBitLong = (index.toLong() * bitSize.toLong())
-    val sizeLong = bitSize.toLong()
-
-    require(startBitLong + sizeLong <= totalBits.toLong()) {
-        "Encoded list shorter than declared window: need bits [${startBitLong}..${startBitLong + sizeLong - 1}], " +
-        "but available is 0..${totalBits - 1} (bytes=${bytes.size})"
+    require(endBit <= totalBits) {
+        "Encoded list shorter than declared window: need bits [$startBit..${endBit - 1}], available 0..${totalBits - 1} (bytes=${bytes.size})"
     }
 
-    val out = CharArray(bitSize.toInt())
-    var bitPos = startBitLong.toInt()
-    var i = 0
-    while (i < out.size) {
-        val byteIndex = bitPos / 8
-        val shift = 7 - (bitPos % 8)
-        val b = bytes[byteIndex].toInt() and 0xFF
-        val bit = (b shr shift) and 1
-        out[i] = if (bit == 1) '1' else '0'
-        i++
-        bitPos++
+    // bitSize が小さいので CharArray で十分、toList() のほうが安全
+    val result = CharArray(bitSize.toInt()) { i ->
+        val bitPos = startBit + i
+        val byteIndex = bitPos ushr 3
+        val shift = 7 - (bitPos and 7)
+        val bit = (bytes[byteIndex].toInt() shr shift) and 1
+        if (bit == 1) '1' else '0'
     }
-    return out.asList()
+    return result.toList()
 }
-
