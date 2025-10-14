@@ -1,62 +1,50 @@
-@JvmBlocking
-@JvmAsync
-@JsPromise
-@JsExport.Ignore
-suspend fun runPolicyRequests(
-    jwt: String,
-    policyRequests: List<PolicyRequest>,
-    context: Map<String, Any> = emptyMap(),
-    onSuccess: suspend (PolicyResult) -> Unit,
-    onError: suspend (PolicyResult, Throwable) -> Unit,
-) {
-    coroutineScope {
-        policyRequests.forEach { policyRequest ->
-            launch {
-                val policy = policyRequest.policy
-                val policyName = policy::class.qualifiedName ?: policy::class.simpleName ?: "UnknownPolicy"
-                val isRevokedLike =
-                    policy::class.simpleName?.contains("Revoked", ignoreCase = true) == true ||
-                    policy.toString().contains("revoked-status-list", ignoreCase = true)
-                
-                println("[Policy/START] $policyName  raw=$policy  (revoked-like=$isRevokedLike)")
+suspend fun verifyWithAttributes(
+    data: JsonObject,
+    attributes: StatusPolicyArgument
+): Result<Any> {
+    // ---- debug begin ----
+    println("[StatusPolicy] verifyWithAttributes(): attrs=${attributes::class.qualifiedName}")
+    println("[StatusPolicy] data.keys=${data.keys}")
+    // ---- debug end ----
 
-                runCatching {
-                    val dataForPolicy: JsonElement = when (policy) {
-                        is JwtVerificationPolicy -> {
-                            
-                            println("[Policy/Input] $policyName <- JsonPrimitive(jwt)  (JWT verification branch)")
-                            JsonPrimitive(jwt)
-                        }
+    val extractor = getStatusEntryElementExtractor(attributes)
 
-                        is CredentialDataValidatorPolicy, is CredentialWrapperValidatorPolicy -> {
+    // ---- debug ----
+    println("[StatusPolicy] chosen extractor=${extractor::class.qualifiedName}")
 
-                            val full = SDJwt.parse(jwt).fullPayload.also {
-                                val keys = it.jsonObject.keys.joinToString()
-                                println("[Policy/Input] $policyName <- SDJwt.fullPayload  keys=[$keys]")
-    
-                                println("[Policy/Input] $policyName  has(status)=${"status" in it.jsonObject}  has(credentialStatus)=${"credentialStatus" in it.jsonObject}")
-                            }
-                            full
-                        }
+    val entry = extractor.extract(data)
 
-                        else -> {
-
-                            println("[Policy/UNSUPPORTED] $policyName  -> throwing IllegalArgumentException")
-                            throw IllegalArgumentException("Unsupported policy type: ${policy::class.simpleName}")
-                        }
-                    }
-
-                    val runResult = policyRequest.runPolicyRequest(dataForPolicy, context)
-                    val policyResult = PolicyResult(policyRequest, runResult)
-
-                    println("[Policy/DONE]  $policyName  result.isSuccess=${runResult.isSuccess}")
-                    onSuccess(policyResult)
-                }.onFailure { t ->
-                    println("[Policy/ERROR] $policyName  ${t::class.simpleName}: ${t.message}")
-                    onError(PolicyResult(policyRequest, Result.failure(t)), t)
-                }
-            }
-        }
+    // ---- debug ----
+    if (entry == null) {
+        println("[StatusPolicy] no status entry found -> policy_available=false")
+        return Result.success(JsonObject(mapOf("policy_available" to JsonPrimitive(false))))
+    } else {
+        println("[StatusPolicy] extracted status entry=$entry")
     }
+
+    val res = processStatusEntry(entry, attributes)
+
+    // ---- debug ----
+    println("[StatusPolicy] processStatusEntry result.isSuccess=${res.isSuccess}")
+    res.exceptionOrNull()?.let { e ->
+        println("[StatusPolicy] processStatusEntry error=${e::class.simpleName}: ${e.message}")
+    }
+
+    return res
 }
 
+private fun getStatusEntryElementExtractor(args: StatusPolicyArgument) =
+    when (args) {
+        is IETFStatusPolicyAttribute -> {
+            // ---- debug ----
+            println("[StatusPolicy] getExtractor: IETFStatusPolicyAttribute -> ietfEntryExtractor (args=$args)")
+            ietfEntryExtractor
+        }
+        is W3CStatusPolicyAttribute, is W3CStatusPolicyListArguments -> {
+            // ---- debug ----
+            println("[StatusPolicy] getExtractor: W3C* -> w3cEntryExtractor (args=$args)")
+            w3cEntryExtractor
+        }
+    }
+
+    
