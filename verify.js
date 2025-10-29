@@ -1,25 +1,18 @@
-val credentialStatusArr = buildJsonArray {
-  jsonArray.forEach { element ->
-    val obj = element.jsonObject
-    val bslVcUrl = obj["bslVcUrl"]!!.jsonPrimitive.content
-    val statusListIndex = obj["index"]!!.jsonPrimitive.content
-    val statusPurpose = obj["statusPurpose"]!!.jsonPrimitive.content
+import id.walt.w3c.status.CredentialStatusProvider
 
-    val actualCredentialUrl = URLBuilder(vcRegistryBaseUrl)
-      .appendPathSegments("issuers", issuerDid, "bsl", "vcUrls", bslVcUrl)
-      .buildString()
 
-    add(
-      buildJsonObject {
-        put("id", JsonPrimitive("$actualCredentialUrl#$statusListIndex"))
-        put("type", JsonPrimitive("BitstringStatusListEntry"))
-        put("statusPurpose", JsonPrimitive(statusPurpose))
-        put("statusListIndex", JsonPrimitive(statusListIndex))
-        put("statusListCredential", JsonPrimitive(actualCredentialUrl))
-      }
-    )
-  }
+
+
+try {
+    val statusArr = CredentialStatusProvider.build(issuerDid!!, vcType!!, credId!!)
+
+    if (statusArr == null) {
+        log.warn { "CredentialStatusProvider.build() returned null for $credId" }
+    } else {
+        vc.customFields["credentialStatus"] = statusArr
+        log.info { "credentialStatus assigned for $credId" }
+    }
+
+} catch (e: Exception) {
+    log.error(e) { "Failed to build credentialStatus for $credId" }
 }
-
-log.info { "credentialStatusObj: $credentialStatusArr" }
-return credentialStatusArr
