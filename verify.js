@@ -1,18 +1,36 @@
-import id.walt.w3c.status.CredentialStatusProvider
 
+val vcJson = vc.content 
 
+val credentialId: String =
+  vcJson["id"]?.jsonPrimitive?.content ?: error("vc.id missing")
 
+val issuerDid: String =
+  when (val iss = vcJson["issuer"]) {
+    is JsonPrimitive -> iss.content
+    is JsonObject    -> iss["id"]?.jsonPrimitive?.content
+    else             -> null
+  } ?: error("vc.issuer missing")
 
-try {
-    val statusArr = CredentialStatusProvider.build(issuerDid!!, vcType!!, credId!!)
-
-    if (statusArr == null) {
-        log.warn { "CredentialStatusProvider.build() returned null for $credId" }
-    } else {
-        vc.customFields["credentialStatus"] = statusArr
-        log.info { "credentialStatus assigned for $credId" }
+val credentialType: String =
+  vcJson["type"]?.let { t ->
+    when (t) {
+      is JsonArray    -> t.mapNotNull { it.jsonPrimitive.contentOrNull }
+                         .firstOrNull { it != "VerifiableCredential" }
+      is JsonPrimitive -> t.content
+      else             -> null
     }
+  } ?: error("vc.type missing or invalid")
 
-} catch (e: Exception) {
-    log.error(e) { "Failed to build credentialStatus for $credId" }
+val statusArr: JsonArray =
+  CredentialStatusProvider.build(
+    issuerDid = issuerDid,
+    credentialType = credentialType,
+    credentialId = credentialId
+  ) ?: error("CredentialStatusProvider returned null for vc.id=$credentialId")
+
+
+val patchedContent = buildJsonObject {
+  vcJson.forEach { (k, v) -> put(k, v) } 
+  put("credentialStatus", statusArr)
 }
+vc = vc.copy(content = patchedContent) 
