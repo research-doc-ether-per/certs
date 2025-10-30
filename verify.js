@@ -1,12 +1,21 @@
-import { LoadKeyPairByIssuerDid } from './key-loader'
-import { multibaseDecode, multibaseEncode, MultibaseEncoding } from 'multibase'
-import * as keyUtils from './keyUtils'
-import * as secp256k1 from '@noble/secp256k1'
-import * as ed25519 from '@noble/ed25519'
+export type KeyMode = 'multibase' | 'jwk'
 
-async function sign(dataToSign: Uint8Array | ArrayBufferLike, issuerCrypto: any): Promise<string> {
+export interface IssuerCrypto {
+  mode: KeyMode
+  keyType?: 'eddsa' | 'ecdsa'
+  alg?: 'ES256' | 'Ed25519'
+  verificationMethodId?: string
+  publicJwk?: JsonWebKey
+  privateJwk?: JsonWebKey
+  publicKeyMultibase?: string
+  secretKeyMultibase?: string
+}
+
+
+async function sign(dataToSign: Uint8Array, issuerCrypto: IssuerCrypto): Promise<string> {
   if (issuerCrypto.mode === 'jwk') {
     const { privateJwk, alg } = issuerCrypto
+    if (!privateJwk || !alg) throw new Error('Missing JWK or algorithm')
     const keyData = await crypto.subtle.importKey(
       'jwk',
       privateJwk,
@@ -17,23 +26,24 @@ async function sign(dataToSign: Uint8Array | ArrayBufferLike, issuerCrypto: any)
     const signature = await crypto.subtle.sign(
       alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' },
       keyData,
-      dataToSign
+      dataToSign.buffer
     )
     return Buffer.from(new Uint8Array(signature)).toString('base64url')
   } else {
-    const keyType = keyUtils.getKeyTypeFromSecretKeyMultibase(issuerCrypto.secretKeyMultibase)
-    const secretKey = multibaseDecode(issuerCrypto.secretKeyMultibase).bytes
+    const keyType = keyUtils.getKeyTypeFromSecretKeyMultibase(issuerCrypto.secretKeyMultibase!)
+    const secretKey = multibaseDecode(issuerCrypto.secretKeyMultibase!).bytes
     let signature
-    if (keyType === 'eddsa') signature = ed25519.sign(dataToSign, secretKey.slice(2))
+    if (keyType === 'eddsa') signature = await ed25519.sign(dataToSign, secretKey.slice(2))
     else if (keyType === 'ecdsa') signature = secp256k1.sign(dataToSign, secretKey.slice(2))
-    return multibaseEncode(signature as Uint8Array<ArrayBufferLike>, MultibaseEncoding.BASE64URL_NO_PAD)
+    return multibaseEncode(signature as Uint8Array, MultibaseEncoding.BASE64URL_NO_PAD)
   }
 }
 
-async function verify(signature: Uint8Array, message: Uint8Array, issuerCrypto: any): Promise<boolean> {
+async function verify(signature: string, message: Uint8Array, issuerCrypto: IssuerCrypto): Promise<boolean> {
   try {
     if (issuerCrypto.mode === 'jwk') {
       const { publicJwk, alg } = issuerCrypto
+      if (!publicJwk || !alg) throw new Error('Missing JWK or algorithm')
       const keyData = await crypto.subtle.importKey(
         'jwk',
         publicJwk,
@@ -45,14 +55,15 @@ async function verify(signature: Uint8Array, message: Uint8Array, issuerCrypto: 
       return await crypto.subtle.verify(
         alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' },
         keyData,
-        sigBytes,
-        message
+        sigBytes.buffer,
+        message.buffer
       )
     } else {
-      const keyType = keyUtils.getKeyTypeFromPublicKeyMultibase(issuerCrypto.publicKeyMultibase)
-      const publicKey = multibaseDecode(issuerCrypto.publicKeyMultibase).bytes
-      if (keyType === 'eddsa') return ed25519.verify(signature, message, publicKey.slice(2))
-      if (keyType === 'ecdsa') return secp256k1.verify(signature, message, publicKey.slice(2))
+      const keyType = keyUtils.getKeyTypeFromPublicKeyMultibase(issuerCrypto.publicKeyMultibase!)
+      const publicKey = multibaseDecode(issuerCrypto.publicKeyMultibase!).bytes
+      const sigBytes = typeof signature === 'string' ? multibaseDecode(signature).bytes : signature
+      if (keyType === 'eddsa') return ed25519.verify(sigBytes, message, publicKey.slice(2))
+      if (keyType === 'ecdsa') return secp256k1.verify(sigBytes, message, publicKey.slice(2))
       throw new Error('unsupported key format')
     }
   } catch {
@@ -95,7 +106,6 @@ export async function verifyBSL(vc: any, issuerDid: string): Promise<boolean> {
   const { proofValue } = proof
   const vcWithoutProof = removeProof(vc)
   const dataToVerify = new TextEncoder().encode(JSON.stringify(vcWithoutProof))
-  const signature = Buffer.from(proofValue, 'base64url')
   const issuerCrypto = LoadKeyPairByIssuerDid(issuerDid)
-  return await verify(signature, dataToVerify, issuerCrypto)
+  return await verify(proofValue, dataToVerify, issuerCrypto)
 }
