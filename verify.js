@@ -1,3 +1,31 @@
+// types.ts（可放一起）
+export type JwkEc = {
+  kty: 'EC';
+  crv: 'P-256';
+  x: string;
+  y: string;
+  d?: string;
+  kid?: string;
+};
+
+export type IssuerCryptoJwk = {
+  mode: 'jwk';
+  keyType: 'ecdsa';
+  alg: 'ES256';
+  verificationMethodId: string;
+  publicJwk: JwkEc;   // 没有 d
+  privateJwk: JwkEc;  // 带 d
+};
+
+export type IssuerCryptoMultibase = {
+  mode: 'multibase';
+  publicKeyMultibase: string;
+  secretKeyMultibase: string;
+};
+
+export type IssuerCrypto = IssuerCryptoJwk | IssuerCryptoMultibase;
+
+
 // key-loader.ts
 import { config } from './config'
 import { IssuerCrypto, JwkEc } from './types'
