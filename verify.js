@@ -178,49 +178,95 @@ async function jwkImportPrivate(jwk: JWK, alg: Alg): Promise<CryptoKey> {
 
 
 
-async function jwkImportPublic(jwk: JWK, alg: Alg): Promise<CryptoKey> {
-  if (alg === 'ES256') {
-    return crypto.subtle.importKey(
-      'jwk',
-      jwk as JsonWebKey,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify'],
-    );
-  }
-  if (alg === 'EdDSA') {
-    return crypto.subtle.importKey(
-      'jwk',
-      jwk as JsonWebKey,
-      { name: 'Ed25519' },
-      false,
-      ['verify'],
-    );
-  }
-  throw new Error(`Unsupported alg: ${alg}`);
+// 你已有
+import canonicalize from 'json-canonicalize';
+
+// 保留你原来的 removeProof / toSignableUint8Array
+function removeProof<T extends { proof?: unknown }>(vc: T): Omit<T, 'proof'> {
+  const { proof, ...rest } = vc as any;
+  return rest;
+}
+function toSignableUint8Array(obj: object): Uint8Array {
+  const canonicalized = canonicalize(obj);
+  return new TextEncoder().encode(canonicalized);
 }
 
-async function jwkImportPrivate(jwk: JWK, alg: Alg): Promise<CryptoKey> {
-  if (alg === 'ES256') {
-    return crypto.subtle.importKey(
-      'jwk',
-      jwk as JsonWebKey,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['sign'],
-    );
+// —— Multibase 辅助（你已有 multibaseDecode/Encode 的话继续用原来的）——
+type MultibaseEncoding = 'u' | 'z';
+function multibaseDecode(str: string): { bytes: Uint8Array; encoding: MultibaseEncoding } {
+  if (!str || str.length < 2) {
+    const err: any = new Error('Invalid multibase string: too short');
+    err.status = 400;
+    throw err;
   }
-  if (alg === 'EdDSA') {
-    return crypto.subtle.importKey(
-      'jwk',
-      jwk as JsonWebKey,
-      { name: 'Ed25519' },
-      false,
-      ['sign'],
-    );
+  const prefix = str[0] as MultibaseEncoding;
+  const encoded = str.slice(1);
+  let bytes: Uint8Array;
+  switch (prefix) {
+    case 'u': // base64url(no pad)
+      bytes = base64urlToUint8Array(encoded);
+      break;
+    case 'z': // base58btc
+      // 如果你有现成 base58 解码，替换这里；暂留为抛错占位
+      throw new Error('BASE58 decoding not implemented here');
+    default: {
+      const err: any = new Error(`Unsupported multibase encoding prefix: ${prefix}`);
+      err.status = 400;
+      throw err;
+    }
   }
-  throw new Error(`Unsupported alg: ${alg}`);
+  return { bytes, encoding: prefix };
 }
+
+// —— JWK 路径 ——
+// 返回 base64url 字符串（和你之前一样）
+async function sign(dataToSign: Uint8Array, issuerCrypto: IssuerCrypto): Promise<string> {
+  if (isJwkCrypto(issuerCrypto)) {
+    const { privateJwk, alg } = issuerCrypto;
+    const key = await jwkImportPrivate(privateJwk, alg);
+    const algo: any = alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' };
+    const sig = await crypto.subtle.sign(algo, key, toBufferSource(dataToSign));
+    return uint8ToBase64url(new Uint8Array(sig));
+  }
+
+  // multibase 保留你现有实现（示例：ed25519 / secp256k1）
+  const keyType = issuerCrypto.keyType;
+  const secretKey = multibaseDecode(issuerCrypto.secretKeyMultibase).bytes;
+  if (keyType === 'eddsa') {
+    const sig = await ed25519.sign(dataToSign, secretKey.slice(2)); // 你原来的库调用
+    return uint8ToBase64url(sig as Uint8Array);
+  }
+  if (keyType === 'ecdsa') {
+    const sig = await secp256k1.sign(dataToSign, secretKey.slice(2));
+    return uint8ToBase64url(sig as Uint8Array);
+  }
+  throw new Error('unsupported key format');
+}
+
+async function verify(signature: string, message: Uint8Array, issuerCrypto: IssuerCrypto): Promise<boolean> {
+  try {
+    if (isJwkCrypto(issuerCrypto)) {
+      const { publicJwk, alg } = issuerCrypto;
+      if (!publicJwk) throw new Error('Missing JWK or algorithm');
+      const key = await jwkImportPublic(publicJwk, alg);
+      const algo: any = alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' };
+      const sigBytes = base64urlToUint8Array(signature);
+      return await crypto.subtle.verify(algo, key, toBufferSource(sigBytes), toBufferSource(message));
+    }
+
+    // multibase：走你原先的分支
+    const keyType = issuerCrypto.keyType;
+    const publicKey = multibaseDecode(issuerCrypto.publicKeyMultibase).bytes;
+    const sigBytes = base64urlToUint8Array(signature);
+    if (keyType === 'eddsa') return ed25519.verify(sigBytes, message, publicKey.slice(2));
+    if (keyType === 'ecdsa') return secp256k1.verify(sigBytes, message, publicKey.slice(2));
+    throw new Error('unsupported key format');
+  } catch (e) {
+    console.error('Error verifying signature:', e);
+    return false;
+  }
+}
+
 
 
 export async function addProof(
