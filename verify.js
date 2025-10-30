@@ -1,98 +1,148 @@
-// types.ts（可放一起）
 export type JwkEc = {
-  kty: 'EC';
-  crv: 'P-256';
-  x: string;
-  y: string;
-  d?: string;
-  kid?: string;
-};
+  kty: string
+  crv: string
+  x: string
+  y?: string
+  d?: string
+  kid?: string
+}
+
+export interface IssuerEntryRaw {
+  issuer_did: string
+  verificationMethodId?: string
+  issuerKey?: { type: string; jwk: any }
+  keyType?: string
+  publicKeyMultibase?: string
+  secretKeyMultibase?: string
+  [k: string]: any
+}
+
+export type KeyType = 'ecdsa' | 'eddsa'
+export type Alg = 'ES256' | 'ES256K' | 'EdDSA'
 
 export type IssuerCryptoJwk = {
-  mode: 'jwk';
-  keyType: 'ecdsa';
-  alg: 'ES256';
-  verificationMethodId: string;
-  publicJwk: JwkEc;   // 没有 d
-  privateJwk: JwkEc;  // 带 d
-};
+  mode: 'jwk'
+  keyType: KeyType
+  alg: Alg
+  verificationMethodId: string
+  publicJwk: JwkEc
+  privateJwk: JwkEc
+}
 
 export type IssuerCryptoMultibase = {
-  mode: 'multibase';
-  publicKeyMultibase: string;
-  secretKeyMultibase: string;
-};
+  mode: 'multibase'
+  publicKeyMultibase: string
+  secretKeyMultibase: string
+}
 
-export type IssuerCrypto = IssuerCryptoJwk | IssuerCryptoMultibase;
+export type IssuerCrypto = IssuerCryptoJwk | IssuerCryptoMultibase
+
+export interface AppConfig {
+  issuers: IssuerEntryRaw[]
+}
 
 
-// key-loader.ts
-import { config } from './config'
-import { IssuerCrypto, JwkEc } from './types'
 
-type KeyInfo = { keyType: 'ecdsa' | 'eddsa'; alg: 'ES256' | 'ES256K' | 'EdDSA' }
+import { config } from '../config'
+import {
+  IssuerEntryRaw,
+  IssuerCrypto,
+  IssuerCryptoJwk,
+  IssuerCryptoMultibase,
+  KeyType,
+  Alg,
+  JwkEc,
+} from './types'
 
-function deriveKeyInfoFromConfigOrJwk(entry: any, jwk: JwkEc): KeyInfo {
-  // 1) 映射表：配置值 -> keyType / alg
-  const mapByConfig: Record<string, KeyInfo> = {
-    secp256r1: { keyType: 'ecdsa', alg: 'ES256'  },
-    P256:      { keyType: 'ecdsa', alg: 'ES256'  },
+function isJwkEntry(e: IssuerEntryRaw): boolean {
+  return !!e.issuerKey && e.issuerKey.type === 'jwk' && !!e.issuerKey.jwk
+}
+function isMultibaseEntry(e: IssuerEntryRaw): boolean {
+  return !!e.publicKeyMultibase && !!e.secretKeyMultibase
+}
+
+function deriveKeyInfoFromConfigOrJwk(
+  entry: IssuerEntryRaw,
+  jwk: JwkEc
+): { keyType: KeyType; alg: Alg } {
+  const byCfg = (entry.keyType || '').toLowerCase()
+  const byCrv = (jwk.crv || '').toLowerCase()
+
+  const mapCfg: Record<string, { keyType: KeyType; alg: Alg }> = {
+    secp256r1: { keyType: 'ecdsa', alg: 'ES256' },
+    p256: { keyType: 'ecdsa', alg: 'ES256' },
     secp256k1: { keyType: 'ecdsa', alg: 'ES256K' },
-    Ed25519:   { keyType: 'eddsa', alg: 'EdDSA'  },
-    ed25519:   { keyType: 'eddsa', alg: 'EdDSA'  },
+    ed25519: { keyType: 'eddsa', alg: 'EdDSA' },
+  }
+  const mapCrv: Record<string, { keyType: KeyType; alg: Alg }> = {
+    'p-256': { keyType: 'ecdsa', alg: 'ES256' },
+    secp256k1: { keyType: 'ecdsa', alg: 'ES256K' },
+    ed25519: { keyType: 'eddsa', alg: 'EdDSA' },
   }
 
-  // 2) 映射表：JWK.crv -> keyType / alg
-  const mapByCrv: Record<string, KeyInfo> = {
-    'P-256':   { keyType: 'ecdsa', alg: 'ES256'  },
-    'secp256k1': { keyType: 'ecdsa', alg: 'ES256K' },
-    'Ed25519': { keyType: 'eddsa', alg: 'EdDSA'  },
-  }
+  const fromCfg = mapCfg[byCfg]
+  const fromCrv = mapCrv[byCrv]
 
-  const byCfg = entry.keyType ? mapByConfig[String(entry.keyType)] : undefined
-  const byCrv = jwk?.crv ? mapByCrv[String(jwk.crv)] : undefined
-
-  if (byCfg && byCrv && (byCfg.keyType !== byCrv.keyType || byCfg.alg !== byCrv.alg)) {
+  if (fromCfg && fromCrv && (fromCfg.keyType !== fromCrv.keyType || fromCfg.alg !== fromCrv.alg)) {
     throw new Error(
-      `keyType mismatch: config keyType='${entry.keyType}' conflicts with JWK crv='${jwk.crv}'`
+      `keyType mismatch: config.keyType='${entry.keyType}' vs JWK.crv='${jwk.crv}'`
     )
   }
-  return byCfg ?? byCrv ?? (() => { throw new Error(`Cannot derive keyType/alg from config.keyType='${entry.keyType}' and JWK.crv='${jwk?.crv}'`) })()
+  const res = fromCfg ?? fromCrv
+  if (!res) {
+    throw new Error(
+      `Cannot derive keyType/alg from keyType='${entry.keyType}' & crv='${jwk.crv}'`
+    )
+  }
+  return res
 }
 
 export function LoadKeyPairByIssuerDid(issuerDid: string): IssuerCrypto {
-  const entry = config.issuers.find((i: any) => i.issuer_did === issuerDid)
-  if (!entry) throw new Error(`Unknown issuerDid: ${issuerDid}`)
+  const entry: IssuerEntryRaw | undefined = config.issuers.find(
+    (i: IssuerEntryRaw) => i.issuer_did === issuerDid
+  )
+  if (!entry) {
+    throw new Error(`Unknown issuerDid: ${issuerDid}`)
+  }
 
-  // === did:web (JWK) 分支 ===
-  if (entry.issuerKey?.type === 'jwk' && entry.issuerKey?.jwk) {
-    const jwk: JwkEc = entry.issuerKey.jwk
+  if (isJwkEntry(entry)) {
+    const jwk = entry.issuerKey!.jwk as JwkEc
+    if (!jwk.kty || !jwk.crv || !jwk.x) {
+      throw new Error(`Invalid JWK for ${issuerDid}: missing kty/crv/x`)
+    }
+
     const { d, ...pubRest } = jwk
     const publicJwk: JwkEc = pubRest as JwkEc
 
     const { keyType, alg } = deriveKeyInfoFromConfigOrJwk(entry, jwk)
-
-    const verificationMethodId: string =
+    const verificationMethodId =
       entry.verificationMethodId ?? `${entry.issuer_did}#${jwk.kid ?? 'key-1'}`
 
-    return {
+    const out: IssuerCryptoJwk = {
       mode: 'jwk',
-      keyType,        // ← 这里会是 'ecdsa'（来自 'secp256r1'）
-      alg,            // ← 'ES256'
+      keyType,
+      alg,
       verificationMethodId,
       publicJwk,
       privateJwk: jwk,
     }
+    return out
   }
 
-  // === 原有 multibase 分支（保持不变） ===
-  if (entry.publicKeyMultibase && entry.secretKeyMultibase) {
-    return {
+  if (isMultibaseEntry(entry)) {
+    const out: IssuerCryptoMultibase = {
       mode: 'multibase',
-      publicKeyMultibase: entry.publicKeyMultibase,
-      secretKeyMultibase: entry.secretKeyMultibase,
+      publicKeyMultibase: entry.publicKeyMultibase!,
+      secretKeyMultibase: entry.secretKeyMultibase!,
     }
+    return out
   }
 
-  throw new Error(`Issuer config incomplete for ${issuerDid}`)
+  const err: any = new Error(`Issuer config incomplete for ${issuerDid}`)
+  err.status = 404
+  throw err
 }
+
+
+
+
