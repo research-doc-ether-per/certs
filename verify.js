@@ -1,111 +1,86 @@
-export type KeyMode = 'multibase' | 'jwk'
+const cryptoSubtle: SubtleCrypto =
+  (globalThis.crypto?.subtle as SubtleCrypto) ?? (nodeWebcrypto.subtle as SubtleCrypto);
 
-export interface IssuerCrypto {
-  mode: KeyMode
-  keyType?: 'eddsa' | 'ecdsa'
-  alg?: 'ES256' | 'Ed25519'
-  verificationMethodId?: string
-  publicJwk?: JsonWebKey
-  privateJwk?: JsonWebKey
-  publicKeyMultibase?: string
-  secretKeyMultibase?: string
+function toBufferSource(u8: Uint8Array | ArrayBufferLike): ArrayBuffer {
+  return u8 instanceof Uint8Array ? u8.buffer : u8 as ArrayBuffer;
 }
 
 
-async function sign(dataToSign: Uint8Array, issuerCrypto: IssuerCrypto): Promise<string> {
+export async function sign(
+  dataToSign: Uint8Array | ArrayBufferLike,
+  issuerCrypto: IssuerCrypto,
+): Promise<string> {
   if (issuerCrypto.mode === 'jwk') {
-    const { privateJwk, alg } = issuerCrypto
-    if (!privateJwk || !alg) throw new Error('Missing JWK or algorithm')
-    const keyData = await crypto.subtle.importKey(
+    const { privateJwk, alg } = issuerCrypto;
+    if (!privateJwk?.d) throw new Error('Missing private JWK (no d)');
+
+    const keyAlgo =
+      alg === 'ES256'
+        ? { name: 'ECDSA', hash: 'SHA-256' }
+        : { name: 'Ed25519' as const };
+
+    const key = await cryptoSubtle.importKey(
       'jwk',
-      privateJwk,
-      { name: alg === 'ES256' ? 'ECDSA' : 'Ed25519', namedCurve: privateJwk.crv },
+      privateJwk as JsonWebKey,
+      alg === 'ES256' ? { name: 'ECDSA', namedCurve: 'P-256' } : { name: 'Ed25519' },
       false,
-      ['sign']
-    )
-    const signature = await crypto.subtle.sign(
-      alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' },
-      keyData,
-      dataToSign.buffer
-    )
-    return Buffer.from(new Uint8Array(signature)).toString('base64url')
+      ['sign'],
+    );
+
+    const sig = await cryptoSubtle.sign(
+      keyAlgo as any,
+      key,
+      toBufferSource(dataToSign),
+    );
+    return multibaseEncode(new Uint8Array(sig), 'base64url');
+  }
+
+  const raw = multibaseDecode(issuerCrypto.secretKeyMultibase).bytes;
+  const sk = raw.slice(2);
+  let signature: Uint8Array;
+
+  if (issuerCrypto.keyType === 'eddsa') {
+    signature = await ed25519.sign(dataToSign as Uint8Array, sk);
   } else {
-    const keyType = keyUtils.getKeyTypeFromSecretKeyMultibase(issuerCrypto.secretKeyMultibase!)
-    const secretKey = multibaseDecode(issuerCrypto.secretKeyMultibase!).bytes
-    let signature
-    if (keyType === 'eddsa') signature = await ed25519.sign(dataToSign, secretKey.slice(2))
-    else if (keyType === 'ecdsa') signature = secp256k1.sign(dataToSign, secretKey.slice(2))
-    return multibaseEncode(signature as Uint8Array, MultibaseEncoding.BASE64URL_NO_PAD)
+    signature = await secp256k1.sign(dataToSign as Uint8Array, sk);
+  }
+  return multibaseEncode(signature, 'base64url');
+}
+
+export async function verify(
+  signatureB64u: string,
+  message: Uint8Array | ArrayBufferLike,
+  issuerCrypto: IssuerCrypto,
+): Promise<boolean> {
+  if (issuerCrypto.mode === 'jwk') {
+    const { publicJwk, alg } = issuerCrypto;
+
+    const key = await cryptoSubtle.importKey(
+      'jwk',
+      publicJwk as JsonWebKey,
+      alg === 'ES256' ? { name: 'ECDSA', namedCurve: 'P-256' } : { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+
+    const sig = multibaseDecode(signatureB64u).bytes;
+    const ok = await cryptoSubtle.verify(
+      alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' as const },
+      key,
+      sig,
+      toBufferSource(message),
+    );
+    return ok;
+  }
+
+  const pk = multibaseDecode(issuerCrypto.publicKeyMultibase).bytes.slice(2);
+  const sig = multibaseDecode(signatureB64u).bytes;
+
+  if (issuerCrypto.keyType === 'eddsa') {
+    return ed25519.verify(sig, message as Uint8Array, pk);
+  } else {
+    return secp256k1.verify(sig, message as Uint8Array, pk);
   }
 }
 
-async function verify(signature: string, message: Uint8Array, issuerCrypto: IssuerCrypto): Promise<boolean> {
-  try {
-    if (issuerCrypto.mode === 'jwk') {
-      const { publicJwk, alg } = issuerCrypto
-      if (!publicJwk || !alg) throw new Error('Missing JWK or algorithm')
-      const keyData = await crypto.subtle.importKey(
-        'jwk',
-        publicJwk,
-        { name: alg === 'ES256' ? 'ECDSA' : 'Ed25519', namedCurve: publicJwk.crv },
-        false,
-        ['verify']
-      )
-      const sigBytes = Uint8Array.from(Buffer.from(signature, 'base64url'))
-      return await crypto.subtle.verify(
-        alg === 'ES256' ? { name: 'ECDSA', hash: 'SHA-256' } : { name: 'Ed25519' },
-        keyData,
-        sigBytes.buffer,
-        message.buffer
-      )
-    } else {
-      const keyType = keyUtils.getKeyTypeFromPublicKeyMultibase(issuerCrypto.publicKeyMultibase!)
-      const publicKey = multibaseDecode(issuerCrypto.publicKeyMultibase!).bytes
-      const sigBytes = typeof signature === 'string' ? multibaseDecode(signature).bytes : signature
-      if (keyType === 'eddsa') return ed25519.verify(sigBytes, message, publicKey.slice(2))
-      if (keyType === 'ecdsa') return secp256k1.verify(sigBytes, message, publicKey.slice(2))
-      throw new Error('unsupported key format')
-    }
-  } catch {
-    return false
-  }
-}
 
-function removeProof<T extends { proof?: unknown }>(vc: T): Omit<T, 'proof'> {
-  const { proof, ...vcWithoutProof } = vc
-  return vcWithoutProof
-}
-
-function toSignableUint8Array(obj: object): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(obj))
-}
-
-export async function addProof(vc: any, issuerDid: string, controllerDid: string): Promise<any> {
-  const issuerCrypto = LoadKeyPairByIssuerDid(issuerDid)
-  const proofType = issuerCrypto.alg || issuerCrypto.keyType
-  const verificationMethod =
-    issuerCrypto.mode === 'jwk'
-      ? issuerCrypto.verificationMethodId
-      : `${issuerDid}#key-1`
-  const proof = {
-    type: proofType,
-    created: new Date().toISOString(),
-    verificationMethod,
-    proofPurpose: 'assertionMethod',
-  }
-  const vcWithoutProof = removeProof(vc)
-  const dataToSign = toSignableUint8Array(vcWithoutProof)
-  const proofValue = await sign(dataToSign, issuerCrypto)
-  const proofWithSignature = { ...proof, proofValue }
-  return { ...vcWithoutProof, proof: proofWithSignature }
-}
-
-export async function verifyBSL(vc: any, issuerDid: string): Promise<boolean> {
-  const { proof, ...document } = vc
-  if (!proof) throw new Error('Proof missing')
-  const { proofValue } = proof
-  const vcWithoutProof = removeProof(vc)
-  const dataToVerify = new TextEncoder().encode(JSON.stringify(vcWithoutProof))
-  const issuerCrypto = LoadKeyPairByIssuerDid(issuerDid)
-  return await verify(proofValue, dataToVerify, issuerCrypto)
-}
