@@ -302,6 +302,27 @@ export async function addProof(
 }
 
 
+export async function verifyBSL(vc: any, issuerDid: string): Promise<boolean> {
+  const { proof, ...document } = vc ?? {};
+  if (!proof) {
+    const err: any = new Error('Proof is missing');
+    err.status = 400;
+    throw err;
+  }
+
+  const proofValue: unknown = (proof as any).proofValue;
+  if (typeof proofValue !== 'string' || proofValue.length === 0) {
+    const err: any = new Error('Invalid proofValue');
+    err.status = 400;
+    throw err;
+  }
+
+  const vcWithoutProof = removeProof(vc);
+  const dataToVerify = toSignableUint8Array(vcWithoutProof);
+
+  const issuerCrypto = loadKeyPairByIssuerDid(issuerDid);
+  return await verify(proofValue, dataToVerify, issuerCrypto);
+}
 
 
 
