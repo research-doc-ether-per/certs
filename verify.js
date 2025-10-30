@@ -10,15 +10,23 @@ export function ensureDidPortEncoded(did: string): string {
 
   const msi = did.slice(i + 1);
 
-  // すでに host%3Aport:... なら無変更
+  // すでにエンコード済みならそのまま
   if (/^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+)%3A\d{1,5}:/.test(msi)) {
     return did;
   }
 
-  // 先頭が host:port:... の形なら %3A に置換
+  // host:port → host%3Aport
   const replaced = msi.replace(
-    /^(?<host>(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+)):(?<port>\d{1,5}):/,
-    (_m, _host, _port, g: any) => `${g.host}%3A${g.port}:`
+    /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+):(\d{1,5}):/,
+    (match) => {
+      const parts = match.split(':');
+      if (parts.length >= 3) {
+        const host = parts[0];
+        const port = parts[1];
+        return `${host}%3A${port}:`;
+      }
+      return match;
+    }
   );
 
   return replaced === msi ? did : `did:${method}:${replaced}`;
