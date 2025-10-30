@@ -1,3 +1,5 @@
+import { webcrypto as nodeWebcrypto } from 'crypto';
+
 const cryptoSubtle: SubtleCrypto =
   (globalThis.crypto?.subtle as SubtleCrypto) ?? (nodeWebcrypto.subtle as SubtleCrypto);
 
