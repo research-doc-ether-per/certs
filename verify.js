@@ -1,122 +1,110 @@
-private fun removeSDFields(payload: JsonObject, sdMap: Map<String, SDField>): JsonObject {
-    println("[SDPAYLOAD][removeSDFields] ENTER payloadKeys=${payload.keys} sdMapKeys=${sdMap.keys}")
+suspend fun generateSdJwtVC(
+    credentialRequest: CredentialRequest,
+    credentialData: JsonObject,
+    issuerId: String,
+    issuerKey: Key,
+    selectiveDisclosure: SDMap? = null,
+    dataMapping: JsonObject? = null,
+    x5Chain: List<String>? = null,
+    display: List<DisplayProperties>? = null,
+): String {
+    val proofHeader = credentialRequest.proof?.jwt?.let { JwtUtils.parseJWTHeader(it) }
+        ?: throw CredentialError(
+            credentialRequest = credentialRequest,
+            errorCode = CredentialErrorCode.invalid_or_missing_proof,
+            message = "Proof must be JWT proof"
+        )
 
-    val result = JsonObject(
-        payload.filterKeys { key ->
-            val drop = (sdMap[key]?.sd == true)
-            println("[SDPAYLOAD][removeSDFields] filter key=$key drop=$drop (sd=${sdMap[key]?.sd})")
-            !drop
-        }.mapValues { entry ->
-            val key = entry.key
-            val value = entry.value
-            val hasChildren = !sdMap[key]?.children.isNullOrEmpty()
-            val isObj = value is JsonObject
-            println("[SDPAYLOAD][removeSDFields] mapValues key=$key isObj=$isObj hasChildren=$hasChildren")
+    val holderKid = proofHeader[JWTClaims.Header.keyID]?.jsonPrimitive?.content
+    val holderKey = proofHeader[JWTClaims.Header.jwk]?.jsonObject
 
-            if (isObj && hasChildren) {
-                val childMap = sdMap[key]?.children ?: mapOf()
-                println("[SDPAYLOAD][removeSDFields] RECURSE key=$key childMapKeys=${childMap.keys}")
-                removeSDFields(value.jsonObject, childMap)
-            } else {
-                value
-            }
-        }
+    if (holderKey.isNullOrEmpty() && holderKid.isNullOrEmpty()) throw CredentialError(
+        credentialRequest = credentialRequest,
+        errorCode = CredentialErrorCode.invalid_or_missing_proof,
+        message = "Proof JWT header must contain kid or jwk claim"
     )
 
-    println("[SDPAYLOAD][removeSDFields] EXIT resultKeys=${result.keys}")
-    return result
+    val holderDid =
+        if (!holderKid.isNullOrEmpty() && DidUtils.isDidUrl(holderKid)) holderKid.substringBefore("#") else null
+
+    val holderKeyJWK = JWKKey.importJWK(holderKey.toString()).getOrNull()?.exportJWKObject()
+        ?.plus(JWTClaims.Header.keyID to JWKKey.importJWK(holderKey.toString()).getOrThrow().getKeyId())
+        ?.toJsonObject()
+
+    // ✅ 1️⃣ 在创建 SDPayload 之前给 credentialData 注入空数组
+    val credentialDataWithStatus = credentialData.toMutableMap().apply {
+        this["credentialStatus"] = buildJsonArray { } // 空数组 []
+    }.let { JsonObject(it) }
+
+    val sdPayload = SDPayload.createSDPayload(
+        fullPayload = credentialDataWithStatus.mergeSDJwtVCPayloadWithMapping(
+            mapping = dataMapping ?: JsonObject(emptyMap()),
+            context = mapOf(
+                "subjectDid" to holderDid,
+                "display" to Json.encodeToJsonElement(display ?: emptyList()).jsonArray,
+            ).filterValues {
+                when (it) {
+                    is JsonElement -> it !is JsonNull && (it !is JsonObject || it.jsonObject.isNotEmpty()) &&
+                            (it !is JsonArray || it.jsonArray.isNotEmpty())
+                    else -> it.toString().isNotEmpty()
+                }
+            }.mapValues { (_, value) ->
+                when (value) {
+                    is JsonElement -> value
+                    else -> JsonPrimitive(value.toString())
+                }
+            },
+            data = dataFunctions
+        ),
+        disclosureMap = selectiveDisclosure ?: SDMap(mapOf())
+    )
+
+    val cnf = holderDid?.let { buildJsonObject { put(JWTClaims.Header.keyID, holderDid) } }
+        ?: holderKeyJWK?.let { buildJsonObject { put("jwk", holderKeyJWK) } }
+        ?: throw IllegalArgumentException("Either holderKey or holderDid must be given")
+
+    val defaultPayloadProperties = defaultPayloadProperties(
+        issuerId = issuerId,
+        cnf = cnf,
+        vct = credentialRequest.vct
+            ?: throw CredentialError(
+                credentialRequest = credentialRequest,
+                errorCode = CredentialErrorCode.invalid_request,
+                message = "VCT must be set on credential request"
+            )
+    ).plus("display" to Json.encodeToJsonElement(display ?: emptyList()).jsonArray)
+
+    val undisclosedPayload = sdPayload.undisclosedPayload.plus(defaultPayloadProperties).let { JsonObject(it) }
+    val fullPayload = sdPayload.fullPayload.plus(defaultPayloadProperties).let { JsonObject(it) }
+
+    // ✅ 2️⃣ 在 issuerDid 前注入 credentialStatus 到 fullPayload
+    val fullPayloadWithStatus = fullPayload.toMutableMap().apply {
+        this["credentialStatus"] = buildJsonArray { } // 空数组 []
+    }.let { JsonObject(it) }
+
+    val issuerDid = if (DidUtils.isDidUrl(issuerId)) issuerId else null
+
+    val headers = mapOf(
+        JWTClaims.Header.keyID to getKidHeader(issuerKey, issuerDid),
+        JWTClaims.Header.type to SD_JWT_VC_TYPE_HEADER
+    ).plus(x5Chain?.let {
+        mapOf(JWTClaims.Header.x5c to JsonArray(it.map { cert -> cert.toJsonElement() }))
+    } ?: mapOf())
+
+    val finalSdPayload = SDPayload.createSDPayload(
+        fullPayload = fullPayloadWithStatus,
+        undisclosedPayload = undisclosedPayload
+    )
+
+    val jwt = issuerKey.signJws(
+        plaintext = finalSdPayload.undisclosedPayload.toString().encodeToByteArray(),
+        headers = headers.mapValues { it.value.toJsonElement() }
+    )
+
+    return SDJwtVC(
+        SDJwt.createFromSignedJwt(
+            signedJwt = jwt,
+            sdPayload = finalSdPayload
+        )
+    ).toString()
 }
-
-private fun generateSDPayload(
-    payload: JsonObject,
-    sdMap: SDMap,
-    digests2disclosures: MutableMap<String, SDisclosure>
-): JsonObject {
-    println("[SDPAYLOAD][generateSDPayload] ENTER payloadKeys=${payload.keys} sdMapKeys=${sdMap.keys} decoyMode=${sdMap.decoyMode} decoys=${sdMap.decoys}")
-
-    val sdPayload = removeSDFields(payload, sdMap).toMutableMap()
-    println("[SDPAYLOAD][generateSDPayload] after removeSDFields sdPayloadKeys=${sdPayload.keys}")
-
-    val digests = payload
-        .filterKeys { key ->
-            val cond = (sdMap[key]?.sd == true) || !sdMap[key]?.children.isNullOrEmpty()
-            println("[SDPAYLOAD][generateSDPayload] filterKeys key=$key sd=${sdMap[key]?.sd} hasChildren=${!sdMap[key]?.children.isNullOrEmpty()} -> include=$cond")
-            cond
-        }
-        .map { entry ->
-            val key = entry.key
-            val value = entry.value
-            val hasChildren = !sdMap[key]?.children.isNullOrEmpty()
-            val isObj = value is JsonObject
-            println("[SDPAYLOAD][generateSDPayload] map key=$key isObj=$isObj hasChildren=$hasChildren sd=${sdMap[key]?.sd}")
-
-            if (!isObj || !hasChildren) {
-                // 整体可披露
-                println("[SDPAYLOAD][generateSDPayload] digestSDClaim WHOLE key=$key")
-                val d = digestSDClaim(
-                    key = key,
-                    value = value,
-                    digests2disclosures = digests2disclosures
-                )
-                println("[SDPAYLOAD][generateSDPayload] digestSDClaim WHOLE key=$key -> digest=$d")
-                d
-            } else {
-                // 子项可能分别披露
-                val childMap = sdMap[key]!!.children!!
-                println("[SDPAYLOAD][generateSDPayload] RECURSE key=$key childMapKeys=${childMap.keys}")
-                val nestedSDPayload = generateSDPayload(
-                    payload = value.jsonObject,
-                    sdMap = childMap,
-                    digests2disclosures = digests2disclosures
-                )
-                println("[SDPAYLOAD][generateSDPayload] RECURSE DONE key=$key nestedSDPayloadKeys=${nestedSDPayload.keys}")
-
-                if (sdMap[key]?.sd == true) {
-                    println("[SDPAYLOAD][generateSDPayload] digestSDClaim NESTED-WHOLE key=$key")
-                    val d = digestSDClaim(
-                        key = key,
-                        value = nestedSDPayload,
-                        digests2disclosures = digests2disclosures
-                    )
-                    println("[SDPAYLOAD][generateSDPayload] digestSDClaim NESTED-WHOLE key=$key -> digest=$d")
-                    d
-                } else {
-                    sdPayload[key] = nestedSDPayload
-                    println("[SDPAYLOAD][generateSDPayload] attach nested payload key=$key (no digest)")
-                    null
-                }
-            }
-        }
-        .filterNotNull()
-        .toSet()
-
-    println("[SDPAYLOAD][generateSDPayload] digests.size=${digests.size} digests=$digests")
-
-    if (digests.isNotEmpty()) {
-        sdPayload[SDJwt.DIGESTS_KEY] = buildJsonArray {
-            digests.forEach {
-                println("[SDPAYLOAD][generateSDPayload] add digest=$it")
-                add(it)
-            }
-            if (sdMap.decoyMode != DecoyMode.NONE && sdMap.decoys > 0) {
-                val numDecoys = when (sdMap.decoyMode) {
-                    // 注意：SecureRandom.nextInt 总是返回 0，这里用 nextDouble
-                    DecoyMode.RANDOM -> SecureRandom.nextDouble(1.0, sdMap.decoys + 1.0).toInt()
-                    DecoyMode.FIXED -> sdMap.decoys
-                    else -> 0
-                }
-                println("[SDPAYLOAD][generateSDPayload] decoys mode=${sdMap.decoyMode} configured=${sdMap.decoys} -> numDecoys=$numDecoys")
-                repeat(numDecoys) { idx ->
-                    val fake = digest(generateSalt())
-                    println("[SDPAYLOAD][generateSDPayload] add DECOY[$idx]=$fake")
-                    add(fake)
-                }
-            }
-        }
-    }
-
-    val result = JsonObject(sdPayload)
-    println("[SDPAYLOAD][generateSDPayload] EXIT resultKeys=${result.keys}")
-    return result
-}
-
