@@ -49,4 +49,3 @@ export function isRevoked(vc, index) {
     return (b & (1 << (7 - bitIdx))) !== 0; // 1 → 失効済み
   }
 }
-
