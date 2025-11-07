@@ -1,66 +1,71 @@
 import zlib from 'zlib';
 
-/** Base64URL 文字列を Buffer に変換（パディング自動補完） */
+/** multibase（'u' = base64url no pad）プレフィックスを除去 */
+function stripMultibasePrefix(s) {
+  // 'u' は base64url（no padding）の multibase プレフィックス
+  return s?.startsWith('u') ? s.slice(1) : s;
+}
+
+/** Base64URL 文字列 → Buffer（padding なし対応） */
 function b64urlToBuf(s) {
-  // URL 形式を標準 Base64 に正規化
-  let t = s.replace(/-/g, '+').replace(/_/g, '/');
-  // 必要に応じてパディングを補う
-  const padLen = (4 - (t.length % 4)) % 4;
-  if (padLen) t += '='.repeat(padLen);
+  const t = s.replace(/-/g, '+').replace(/_/g, '/');
+  // padding は Buffer.from(base64) は不要でも動くが、長さが 4 の倍数でなくても受ける
   return Buffer.from(t, 'base64');
 }
 
-/** encodedList を解凍して生データ(Buffer)を返す（gzip/deflate/非圧縮に対応） */
+/** encodedList をデコード：multibase 'u' → base64url → gunzip */
 function decodeEncodedList(encodedList) {
-  const buf = b64urlToBuf(encodedList);
+  // 1) multibase 'u' を取り除く
+  const noPrefix = stripMultibasePrefix(encodedList);
+  if (!noPrefix) throw new Error('encodedList is empty.');
 
-  // 1) GZIP マジック(0x1f,0x8b) の判定
-  const isGzip = buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-  if (isGzip) {
-    return zlib.gunzipSync(buf); // 典型ケース（"H4sI..." で始まる）
-  }
+  // 2) base64url デコード
+  const gz = b64urlToBuf(noPrefix);
 
-  // 2) GZIP でなければ、raw DEFLATE を試す
+  // 3) gzip 展開（この実装では必ず gzip 前提）
   try {
-    return zlib.inflateRawSync(buf);
-  } catch {
-    // 3) それでもダメなら、既に非圧縮（= 生文字列/ビットマップ）とみなす
-    return buf;
+    return zlib.gunzipSync(gz);
+  } catch (e) {
+    throw new Error('encodedList must be gzip-compressed base64url (multibase "u").');
   }
 }
 
 /**
- * BitstringStatusList（revocation）における失効ビットを確認
- * @param {object} vc      VC JSON（credentialSubject.encodedList / statusPurpose）
- * @param {string|number} index  0始まりの index（文字列でも可）
- * @returns {boolean} true=失効（無効） / false=未失効（有効）
+ * BitstringStatusList（revocation）の失効判定
+ *  - 発行側の形式：multibase 'u' + base64url(gzip(bytes)) に合わせる
+ *  - 範囲外 index はエラー
+ *
+ * @param {object} vc   VC JSON（credentialSubject.encodedList / statusPurpose）
+ * @param {string|number} index  0 始まりの index（文字列でも可）
+ * @returns {boolean} true=失効（revoked） / false=未失効（active）
  */
 export function isRevoked(vc, index) {
+  // 必須フィールド確認
   const cs = vc?.credentialSubject;
   if (!cs?.encodedList) throw new Error('encodedList is missing.');
-  if (cs.statusPurpose !== 'revocation')
+  if (cs.statusPurpose !== 'revocation') {
     throw new Error('statusPurpose must be "revocation".');
-
-  const idx = Number(index);
-  if (!Number.isFinite(idx) || idx < 0)
-    throw new Error('index must be a non-negative number.');
-
-  // --- 解凍（gzip/deflate/非圧縮 自動判定）---
-  const raw = decodeEncodedList(cs.encodedList);
-
-  // --- ビット判定：文字列 "0101..." か、バイト配列かを分岐 ---
-  const asText = raw.toString('utf8');
-  if (/^[01]+$/.test(asText)) {
-    const ch = asText[idx];
-    if (ch == null) throw new Error('index out of range.');
-    return ch === '1'; // 1 = revoked
   }
 
-  // バイト配列の場合（MSB-first）
+  // index を数値化して検証
+  const idx = Number(index);
+  if (!Number.isFinite(idx) || idx < 0) {
+    throw new Error('index must be a non-negative number.');
+  }
+
+  // デコード（multibase 'u' → base64url → gunzip）
+  const raw = decodeEncodedList(cs.encodedList);
+
+  // 利用可能ビット長チェック（範囲外はエラー）
+  const bitLen = raw.length * 8; // 例：16384 bytes → 131072 bits
+  if (idx >= bitLen) {
+    throw new Error(`statusListIndex out of range (max=${bitLen - 1}, got=${idx}, bytes=${raw.length}).`);
+  }
+
+  // バイト配列からビット判定（MSB-first）
   const byteIdx = Math.floor(idx / 8);
-  const bitIdx = idx % 8;
+  const bitIdx  = idx % 8;
   const b = raw[byteIdx];
-  if (b === undefined) throw new Error('index out of range.');
   return (b & (1 << (7 - bitIdx))) !== 0; // 1 = revoked
 }
 
