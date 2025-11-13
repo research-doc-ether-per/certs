@@ -10,7 +10,7 @@ import { useTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
-// --- 排序工具 ---
+// 排序工具
 function desc(a, b, key) {
   if (b[key] < a[key]) return -1;
   if (b[key] > a[key]) return 1;
@@ -30,21 +30,70 @@ function stableSort(arr, comparator) {
   return mapped.map(el => el[0]);
 }
 
+// 列定义 + 固定宽度
+const columns = [
+  { id: 'userId',  label: '用户名',   width: 140 },
+  { id: 'vcName',  label: '证书名',   width: 160 },
+  { id: 'index',   label: 'Index',   width: 80  },
+  { id: 'revoked', label: '有效状态', width: 100 },
+];
+
 export default function StatusListDetailDialog({
   open,
   onClose,
-  urls = [],
-  issuedAt = '',
-  vcType = '',
-  targets = [],
+  vcType,         // 只需要从外面传 vcType
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
+  // 画面状态
   const [order, setOrder] = React.useState('asc');
   const [orderBy, setOrderBy] = React.useState('userId');
   const [keyword, setKeyword] = React.useState('');
   const [onlyRevoked, setOnlyRevoked] = React.useState(false);
+
+  // 数据状态：由 API 填充
+  const [urls, setUrls] = React.useState([]);
+  const [issuedAt, setIssuedAt] = React.useState('');
+  const [vcTypeLabel, setVcTypeLabel] = React.useState('');
+  const [targets, setTargets] = React.useState([]);
+
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  // 打开对话框时，根据 vcType 调用 API 获取数据
+  React.useEffect(() => {
+    if (!open || !vcType) return;
+
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/status-lists/detail?vcType=${encodeURIComponent(vcType)}`);
+        if (!res.ok) {
+          throw new Error(`Request failed with status ${res.status}`);
+        }
+        const data = await res.json();
+
+        // 根据你的实际 API 字段名在这里做映射
+        setUrls(data.urls || data.statusListCredentialUrls || []);
+        setIssuedAt(data.issuedAt || data.updateDate || data.createDate || '');
+        setVcTypeLabel(data.vcType || data.type || vcType || '');
+        setTargets(data.targets || data.rows || []);
+      } catch (e) {
+        console.error(e);
+        setError('数据获取失败');
+        setUrls([]);
+        setIssuedAt('');
+        setVcTypeLabel(vcType || '');
+        setTargets([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [open, vcType]);
 
   const handleSort = (key) => {
     const isAsc = orderBy === key && order === 'asc';
@@ -107,6 +156,13 @@ export default function StatusListDetailDialog({
           maxHeight: { xs: '75vh', sm: '70vh' }
         }}
       >
+        {/* 错误提示 */}
+        {error && (
+          <Box sx={{ mb: 2 }}>
+            <Typography color="error" variant="body2">{error}</Typography>
+          </Box>
+        )}
+
         {/* URL 列表 + 复制 */}
         <Stack spacing={1.25} sx={{ mb: 2 }}>
           {urls.map((u, i) => (
@@ -132,12 +188,17 @@ export default function StatusListDetailDialog({
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="body2" sx={labelSx}>证书种别</Typography>
-            <Typography variant="body1" sx={{ minHeight: 24 }}>{vcType}</Typography>
+            <Typography variant="body1" sx={{ minHeight: 24 }}>{vcTypeLabel}</Typography>
           </Stack>
         </Stack>
 
         {/* 检索区 */}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ mb: 1.5 }} alignItems="center">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.25}
+          sx={{ mb: 1.5 }}
+          alignItems="center"
+        >
           <Box sx={{ display:'flex', alignItems:'center', flex: 1, minWidth: 220 }}>
             <Typography variant="body2" sx={labelSx}>对象者</Typography>
             <input
@@ -158,25 +219,41 @@ export default function StatusListDetailDialog({
         </Stack>
 
         {/* 表格 */}
-        <TableContainer component={Paper} sx={{ minWidth: 680, border: '1px solid', borderColor: 'divider' }}>
-          <Table size="small" stickyHeader
+        <TableContainer
+          component={Paper}
+          sx={{ minWidth: 680, border: '1px solid', borderColor: 'divider' }}
+        >
+          <Table
+            size="small"
+            stickyHeader
             sx={{
-              '& .MuiTableCell-root': { borderColor: 'divider', borderWidth: 1, borderStyle: 'solid' },
+              '& .MuiTableCell-root': {
+                borderColor: 'divider',
+                borderWidth: 1,
+                borderStyle: 'solid',
+              },
               '& .MuiTableHead-root .MuiTableCell-root': {
-                backgroundColor: '#000', color: '#fff',
-                borderColor: 'divider', borderWidth: 1, borderStyle: 'solid'
-              }
+                backgroundColor: '#000',
+                color: '#fff',
+                borderColor: 'divider',
+                borderWidth: 1,
+                borderStyle: 'solid',
+              },
             }}
           >
             <TableHead>
               <TableRow>
-                {[
-                  { id: 'userId', label: '用户名' },
-                  { id: 'vcName', label: '证书名' },
-                  { id: 'index', label: 'Index' },
-                  { id: 'revoked', label: '有效状态' },
-                ].map(col => (
-                  <TableCell key={col.id} sortDirection={orderBy === col.id ? order : false}>
+                {columns.map(col => (
+                  <TableCell
+                    key={col.id}
+                    sortDirection={orderBy === col.id ? order : false}
+                    sx={{
+                      width: col.width,
+                      maxWidth: col.width,
+                      minWidth: col.width,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     <TableSortLabel
                       active={orderBy === col.id}
                       direction={orderBy === col.id ? order : 'asc'}
@@ -184,7 +261,7 @@ export default function StatusListDetailDialog({
                       sx={{
                         color: '#fff',
                         '&.Mui-active': { color: '#fff' },
-                        '& .MuiTableSortLabel-icon': { color: '#fff !important' }
+                        '& .MuiTableSortLabel-icon': { color: '#fff !important' },
                       }}
                     >
                       {col.label}
@@ -194,14 +271,34 @@ export default function StatusListDetailDialog({
               </TableRow>
             </TableHead>
             <TableBody>
-              {rows.map((r, idx) => (
-                <TableRow key={`${r.userId}-${idx}`} hover>
-                  <TableCell>{r.userId}</TableCell>
-                  <TableCell sx={{ color: 'error.main' }}>{r.vcName}</TableCell>
-                  <TableCell>{r.index}</TableCell>
-                  <TableCell>{String(r.revoked) === '1' ? '失效' : '有效'}</TableCell>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} align="center">
+                    加载中...
+                  </TableCell>
                 </TableRow>
-              ))}
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} align="center">
+                    无数据
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((r, idx) => (
+                  <TableRow key={`${r.userId}-${idx}`} hover>
+                    <TableCell sx={{ width: columns[0].width }}>{r.userId}</TableCell>
+                    <TableCell
+                      sx={{ width: columns[1].width, color: 'error.main' }}
+                    >
+                      {r.vcName}
+                    </TableCell>
+                    <TableCell sx={{ width: columns[2].width }}>{r.index}</TableCell>
+                    <TableCell sx={{ width: columns[3].width }}>
+                      {String(r.revoked) === '1' ? '失效' : '有效'}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
