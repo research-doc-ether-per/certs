@@ -42,7 +42,8 @@ for f in "${FILES[@]}"; do
     echo "  -> ENV GRADLE_OPTS の後に JDK17 を追加"
   else
     # なければ FROM … buildstage の直後に挿入
-    sed -i "/$NEW/a $JDK17_BLOCK" "$f"
+    ESC_NEW=${NEW//\//\\/}
+    sed -i "/$ESC_NEW/a $JDK17_BLOCK" "$f"
     echo "  -> FROM buildstage の後に JDK17 を追加"
   fi
 
