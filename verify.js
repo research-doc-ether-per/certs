@@ -1,45 +1,5 @@
+表示の有無に関わらず、すべての項目で label と value が左揃えで横並びに表示されること
+付き項目のみ、label と value の表示位置が他の項目とずれて表示されている
 
-<Stack
-  key={claim.key}
-  direction="row"
-  spacing={={1}
-  alignItems="flex-start"
->
-  <span
-    style={{
-      display: 'inline-block',
-      width: '1.5em',
-      textAlign: 'center',
-      color: claim.star ? 'red' : 'transparent',
-      fontWeight: 'bold',
-      marginTop: '2px',
-    }}
-  >
-    {claim.star && (
-      <Tooltip title="選択提示可能な情報" arrow>
-        <StarIcon fontSize="small" />
-      </Tooltip>
-    )}
-  </span>
-
-  <Typography
-    variant="body1"
-    sx={{
-      minWidth: '8em',  
-      fontWeight: 500,
-    }}
-  >
-    {claim.label}：
-  </Typography>
-
-  <Typography
-    variant="body1"
-    sx={{
-      whiteSpace: 'pre-line',  
-      wordBreak: 'break-word', 
-      flex: 1,   
-    }}
-  >
-    {claim.value || '不明'}
-  </Typography>
-</Stack>
+value の改行対応の影響により、表示が折り返され、label との表示位置がずれている。
+付き項目についても他項目と同一のレイアウトを適用し、label と value を左揃えで横並びに表示するとともに、値が長い場合は折り返し、改行が含まれる場合は改行を保持して表示するよう修正しました
