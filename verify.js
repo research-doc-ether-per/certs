@@ -1,54 +1,113 @@
-
 import React from 'react'
-import { Tooltip, Typography, Box } from '@mui/material'
+import { Tooltip, Box, Typography } from '@mui/material'
 
-export default function EllipsisTooltipMultiline(props) {
-  const { text, maxCharsPerLine = 40, emptyText = '未設定' } = props
+export default function EllipsisTooltip({
+  text,
+  maxChars = 30,
+  emptyText = '',
+  sx = {},
+}) {
+  const raw =
+    text === null || text === undefined || text === ''
+      ? emptyText
+      : String(text)
 
-  const raw = text == null ? '' : String(text)
-  const displayText = raw.length ? raw : emptyText
+  if (!raw) {
+    return (
+      <Box component="span" sx={{ display: 'block', maxWidth: '100%', ...sx }}>
+        {emptyText}
+      </Box>
+    )
+  }
 
-  const lines = displayText.split('\n')
+  const hasNewline = raw.includes('\n')
 
-  const hasEllipsis = lines.some((line) => line.length > maxCharsPerLine)
+  // ===== 改行なし：単一行省略 =====
+  if (!hasNewline) {
+    const displayText =
+      raw.length > maxChars ? `${raw.slice(0, maxChars)}…` : raw
+    const needsTooltip = raw.length > maxChars
 
-  const rendered = lines.map((line, idx) => {
-    const short = line.length > maxCharsPerLine
-      ? line.slice(0, maxCharsPerLine) + '…'
-      : line
-    return { idx, short }
-  })
+    const content = (
+      <Box
+        component="span"
+        sx={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          maxWidth: '100%',
+          display: 'block',
+          cursor: needsTooltip ? 'pointer' : 'inherit',
+          ...sx,
+        }}
+      >
+        {displayText}
+      </Box>
+    )
+
+    return needsTooltip ? (
+      <Tooltip
+        arrow
+        title={
+          <Typography sx={{ whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
+            {raw}
+          </Typography>
+        }
+      >
+        {content}
+      </Tooltip>
+    ) : (
+      content
+    )
+  }
+
+  // ===== 改行あり：行ごとに省略 =====
+  const lines = raw.split('\n')
+  const truncatedLines = lines.map((line) =>
+    line.length > maxChars ? `${line.slice(0, maxChars)}…` : line
+  )
+  const needsTooltip = lines.some((line) => line.length > maxChars)
 
   const content = (
-    <Typography
-      variant="body1"
-      color="text.secondary"
+    <Box
+      component="span"
       sx={{
-        whiteSpace: 'pre-line',
-        wordBreak: 'break-word',
+        display: 'block',
+        maxWidth: '100%',
+        cursor: needsTooltip ? 'pointer' : 'inherit',
+        ...sx,
       }}
     >
-      {rendered.map((item, i) => (
-        <React.Fragment key={item.idx}>
-          {item.short}
-          {i !== rendered.length - 1 && '\n'}
-        </React.Fragment>
+      {truncatedLines.map((line, idx) => (
+        <Box
+          key={idx}
+          component="span"
+          sx={{
+            display: 'block',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {line === '' ? '\u00A0' : line}
+        </Box>
       ))}
-    </Typography>
+    </Box>
   )
 
-  if (!hasEllipsis) return content
-
-  return (
+  return needsTooltip ? (
     <Tooltip
+      arrow
       title={
-        <Typography sx={{ whiteSpace: 'pre-line' }}>
-          {displayText}
+        <Typography sx={{ whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
+          {raw}
         </Typography>
       }
-      arrow
     >
-      <Box>{content}</Box>
+      {content}
     </Tooltip>
+  ) : (
+    content
   )
 }
