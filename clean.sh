@@ -107,10 +107,21 @@ run bash -lc "ps aux | grep -E 'xmrig|miner|kdevtmpfsi|kinsing|xmr' | grep -v gr
 
 echo ""
 echo "node / next の親子関係（動いている場合）" | tee -a "$OUT"
+
 if has_cmd pgrep && has_cmd pstree; then
-  PIDS="$(pgrep -f 'node|npm|next' || true)"
-  [ -n "$PIDS" ] && run pstree -p $PIDS | tee -a "$OUT"
+  # node / npm / next が動いているか確認
+  ROOT_PID="$(pgrep -fo 'node|npm|next' || true)"
+
+  if [ -n "$ROOT_PID" ]; then
+    echo "\$ pstree -ap ${ROOT_PID}" | tee -a "$OUT"
+    pstree -ap "${ROOT_PID}" 2>&1 | tee -a "$OUT"
+  else
+    echo "node / next は現在動いていない" | tee -a "$OUT"
+  fi
+else
+  echo "pgrep または pstree が使えないためスキップ" | tee -a "$OUT"
 fi
+
 
 # ------------------------------------------------------------
 # cron / service
@@ -133,7 +144,20 @@ fi
 
 echo ""
 echo "DNS ログ（キーワード一致のみ）" | tee -a "$OUT"
-has_cmd journalctl && run bash -lc "journalctl -u systemd-resolved --no-pager 2>/dev/null | grep -Ei 'pool|xmr|mine' | head -20" | tee -a "$OUT"
+
+if has_cmd journalctl; then
+  DNS_LOG="$(journalctl -u systemd-resolved --no-pager 2>/dev/null \
+    | grep -Ei 'pool|xmr|mine' \
+    | head -20 || true)"
+
+  if [ -n "$DNS_LOG" ]; then
+    echo "$DNS_LOG" | tee -a "$OUT"
+  else
+    echo "該当する DNS ログは見つからなかった" | tee -a "$OUT"
+  fi
+else
+  echo "journalctl が使えないため、この項目はスキップ" | tee -a "$OUT"
+fi
 
 # ------------------------------------------------------------
 # ファイル（最近だけ）
