@@ -1,9 +1,10 @@
-
-
-ls -la | grep -E 'app|pages|next.config'
-
+```bash
 npm ls react react-dom next
-npm ls react-server-dom-webpack react-server-dom-turbopack react-server-dom-parcel
+npm ls react-server-dom-webpack
+npm ls react-server-dom-turbopack
+npm ls react-server-dom-parcel
 
+grep -R "react-server-dom" node_modules/.package-lock.json
+grep -R "react-server-dom" pnpm-lock.yaml
 
-grep -R --line-number '"use server"' .
+```
