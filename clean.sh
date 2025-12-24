@@ -1,13 +1,8 @@
-
-############################################
-# ④ OSS 依存関係の管理
-# 理由：
-# ・npm install は実行タイミングによって依存が変わる可能性がある
-# ・lockfile 通りに確実に依存関係を固定するため npm ci を使用
-# ・issuer-web は next を dependencies に含めているため、
-#   本番実行に不要な devDependencies はインストールしない
-############################################
+# Next の build は devDependencies を使う構成も多いので、
+# まずは lockfile 通りに全部入れて build し、
+# 最後に不要な devDependencies を落とす
 RUN cd ./issuer-web \
-  && npm ci --omit=dev \
+  && npm ci \
   && npm run build \
+  && npm prune --omit=dev \
   && npm cache clean --force
