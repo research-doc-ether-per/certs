@@ -1,17 +1,7 @@
-echo ""
-echo "node / next の親子関係（動いている場合）" | tee -a "$OUT"
-
-if has_cmd pgrep && has_cmd pstree; then
-  # pgrep は -E を使わない（環境差で死ぬ）
-  # node / npm / next をフルコマンドラインから探す
-  ROOT_PID="$(pgrep -fo 'node|npm|next' 2>/dev/null || true)"
-
-  if [ -n "$ROOT_PID" ]; then
-    echo "\$ pstree -ap ${ROOT_PID}" | tee -a "$OUT"
-    pstree -ap "${ROOT_PID}" 2>&1 | tee -a "$OUT"
-  else
-    echo "(該当なし)" | tee -a "$OUT"
-  fi
-else
-  echo "(pgrep/pstree が使えないためスキップ)" | tee -a "$OUT"
-fi
+ローカル環境で確認を行いましたが、現時点では特に気になる点は見当たりませんでした。
+1. react-server-dom 系の依存は未インストール。（npm / package-lock.json ともに該当なし）
+2．use server、route.ts / route.js、API Routes などのサーバー側要素は見当たらない
+3．child_process / exec / eval 等の使用もなし
+4．実行中プロセス・CPU負荷・ネットワーク通信に不審点なし
+5．マイニング系プロセスや不審な一時ファイルも確認されない
+確認された対象やログは以下に置きました。ご確認お願い致します。
