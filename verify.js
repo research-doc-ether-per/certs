@@ -58,3 +58,8 @@ cd ~/workspace/cloudcredentialservice/
 
 # ログ確認（コンテナ名で追うのが安定）
 docker logs -f cloud-issuer-api
+
+コンテナ内で実行されるアプリケーションユーザー（UID:10001）に所有権を付与します
+
+Docker コンテナは非 root ユーザーで動作するため、書き込み権限が必須です
+ホスト側の操作ユーザー（例：ubuntu）に対して読み取り・ディレクトリ参照権限を追加します
