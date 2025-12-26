@@ -1,81 +1,69 @@
-#!/bin/bash
-set -euo pipefail
+# syntax=docker/dockerfile:1.7
+# ↑ BuildKit を利用するための指定（--mount=type=cache が使用可能）
 
-if [ $# -lt 1 ]; then
-  echo "使い方: $0 <command> [image_tag]"
-  echo "コマンド: build | start | stop | init | restart | clear | access"
-  exit 1
-fi
+############################
+# deps stage
+# 依存関係のみをインストールするステージ
+############################
+FROM node:22.18.0-slim AS deps
 
-COMPOSE_FILE="docker/issuer-api/compose.yml"
-SERVICE_NAME="cloud-issuer-api"
-IMAGE_NAME="cloud-issuer-api"
+# 実行環境を production に固定
+ENV NODE_ENV=production
 
-COMMAND="$1"
-IMAGE_TAG="${2:-}"
+# issuer-api の作業ディレクトリ
+WORKDIR /app/services/issuer-api
 
-# tag 未指定なら YYYYMMDD を自動生成
-if [ -z "$IMAGE_TAG" ]; then
-  IMAGE_TAG="$(date +"%Y%m%d")"
-fi
+# npm の不要なログや監査を無効化（ビルド安定化）
+RUN npm config set fund false \
+ && npm config set audit false
 
-FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
+# 依存関係定義ファイルのみコピー（キャッシュ効率向上）
+COPY services/issuer-api/package.json ./
+COPY services/issuer-api/package-lock.json ./
 
-export IMAGE_TAG
-export FULL_IMAGE_NAME
+# production 依存関係のみインストール
+# npm キャッシュを利用してビルド高速化
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev
 
-echo "----------------------------------------"
-echo "Service : ${SERVICE_NAME}"
-echo "Image   : ${FULL_IMAGE_NAME}"
-echo "Command : ${COMMAND}"
-echo "----------------------------------------"
 
-case "$COMMAND" in
-  build)
-    echo "${SERVICE_NAME} をビルドしています..."
-    docker build \
-      -f docker/issuer-api/Dockerfile \
-      -t "${FULL_IMAGE_NAME}" \
-      .
-    echo "build 完了: ${FULL_IMAGE_NAME}"
-    ;;
+############################
+# runtime stage
+# 実行用の最小イメージ
+############################
+FROM node:22.18.0-slim AS runtime
 
-  start)
-    echo "${SERVICE_NAME} を起動しています..."
-    docker-compose -f "${COMPOSE_FILE}" up -d
-    ;;
+ENV NODE_ENV=production
 
-  stop)
-    echo "${SERVICE_NAME} を停止しています..."
-    docker-compose -f "${COMPOSE_FILE}" stop
-    ;;
+# OCI 準拠のメタデータ
+LABEL org.opencontainers.image.title="cloud-issuer-api"
 
-  init)
-    echo "${SERVICE_NAME} を初期化しています..."
-    docker-compose -f "${COMPOSE_FILE}" down -v
-    docker-compose -f "${COMPOSE_FILE}" up -d
-    ;;
+# 最小権限ユーザーを作成
+# UID を固定することでホスト側 volume と整合性を取る
+RUN useradd -m -u 10001 appuser
 
-  restart)
-    echo "${SERVICE_NAME} を再起動しています..."
-    docker-compose -f "${COMPOSE_FILE}" stop
-    docker-compose -f "${COMPOSE_FILE}" up -d
-    ;;
+# 実行時の作業ディレクトリ
+WORKDIR /app/services/issuer-api
 
-  clear)
-    echo "${SERVICE_NAME} を削除しています..."
-    docker-compose -f "${COMPOSE_FILE}" down -v
-    ;;
+# production 依存関係をコピー
+COPY --from=deps --chown=appuser:appuser \
+  /app/services/issuer-api/node_modules ./node_modules
 
-  access)
-    echo "${SERVICE_NAME} にアクセスします..."
-    docker exec -it "${SERVICE_NAME}" /bin/sh
-    ;;
+# アプリケーション本体をコピー
+COPY --chown=appuser:appuser services/issuer-api/app.js ./app.js
+COPY --chown=appuser:appuser services/issuer-api/src ./src
+COPY --chown=appuser:appuser services/issuer-api/config ./config
 
-  *)
-    echo "無効なコマンド: ${COMMAND}"
-    echo "使用可能なコマンド: build | start | stop | init | restart | clear | access"
-    exit 1
-    ;;
-esac
+# ログ出力用ディレクトリ
+# compose 側で volume マウントされる前提
+RUN mkdir -p /app/services/issuer-api/logs \
+ && chown -R appuser:appuser /app/services/issuer-api/logs
 
+# root ではなく非特権ユーザーで実行
+USER appuser
+
+# アプリケーションが使用するポート
+EXPOSE 6002
+
+# アプリケーション起動
+CMD ["npm", "start"]
