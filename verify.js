@@ -1,69 +1,64 @@
-# syntax=docker/dockerfile:1.7
-# ↑ BuildKit を利用するための指定（--mount=type=cache が使用可能）
+version: "3.9"
 
-############################
-# deps stage
-# 依存関係のみをインストールするステージ
-############################
-FROM node:22.18.0-slim AS deps
+services:
+  issuer-api:
+    # bash スクリプトから渡される image 名（例: cloud-issuer-api:20251226）
+    image: ${FULL_IMAGE_NAME}
 
-# 実行環境を production に固定
-ENV NODE_ENV=production
+    # コンテナ名を固定（運用・ログ確認用）
+    container_name: cloud-issuer-api
 
-# issuer-api の作業ディレクトリ
-WORKDIR /app/services/issuer-api
+    # 外部公開ポート
+    ports:
+      - "6002:6002"
 
-# npm の不要なログや監査を無効化（ビルド安定化）
-RUN npm config set fund false \
- && npm config set audit false
+    # 実行時環境変数
+    environment:
+      NODE_ENV: production
 
-# 依存関係定義ファイルのみコピー（キャッシュ効率向上）
-COPY services/issuer-api/package.json ./
-COPY services/issuer-api/package-lock.json ./
+    # 設定ファイル・ログのマウント
+    volumes:
+      # 環境変数ファイル（読み取り専用）
+      - ./config/.env:/app/services/issuer-api/.env:ro
 
-# production 依存関係のみインストール
-# npm キャッシュを利用してビルド高速化
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev
+      # 各種設定ファイル（読み取り専用）
+      - ./config/keycloak.json:/app/services/issuer-api/config/keycloak.json:ro
+      - ./config/log4js.json:/app/services/issuer-api/config/log4js.json:ro
+      - ./config/server.json:/app/services/issuer-api/config/server.json:ro
+      - ./config/vcTemplate.json:/app/services/issuer-api/config/vcTemplate.json:ro
+      - ./config/walletDB.json:/app/services/issuer-api/config/walletDB.json:ro
+      - ./config/waltid.json:/app/services/issuer-api/config/waltid.json:ro
 
+      # ログ出力用ディレクトリ（書き込み可）
+      - ./runtime/logs:/app/services/issuer-api/logs
 
-############################
-# runtime stage
-# 実行用の最小イメージ
-############################
-FROM node:22.18.0-slim AS runtime
+    # ルートファイルシステムを読み取り専用にする
+    read_only: true
 
-ENV NODE_ENV=production
+    # 一時ファイル用 tmpfs
+    tmpfs:
+      - /tmp
 
-# OCI 準拠のメタデータ
-LABEL org.opencontainers.image.title="cloud-issuer-api"
+    # 特権昇格を禁止
+    security_opt:
+      - no-new-privileges:true
 
-# 最小権限ユーザーを作成
-# UID を固定することでホスト側 volume と整合性を取る
-RUN useradd -m -u 10001 appuser
+    # Linux capability をすべて削除
+    cap_drop:
+      - ALL
 
-# 実行時の作業ディレクトリ
-WORKDIR /app/services/issuer-api
+    # ヘルスチェック
+    # Dockerfile には書かず、実行環境側で管理
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:6002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
 
-# production 依存関係をコピー
-COPY --from=deps --chown=appuser:appuser \
-  /app/services/issuer-api/node_modules ./node_modules
-
-# アプリケーション本体をコピー
-COPY --chown=appuser:appuser services/issuer-api/app.js ./app.js
-COPY --chown=appuser:appuser services/issuer-api/src ./src
-COPY --chown=appuser:appuser services/issuer-api/config ./config
-
-# ログ出力用ディレクトリ
-# compose 側で volume マウントされる前提
-RUN mkdir -p /app/services/issuer-api/logs \
- && chown -R appuser:appuser /app/services/issuer-api/logs
-
-# root ではなく非特権ユーザーで実行
-USER appuser
-
-# アプリケーションが使用するポート
-EXPOSE 6002
-
-# アプリケーション起動
-CMD ["npm", "start"]
+    # コンテナ再起動ポリシー
+    restart: unless-stopped
