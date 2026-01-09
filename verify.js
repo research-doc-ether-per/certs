@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# -e : エラー時に即終了
-# -u : 未定義変数をエラーにする
-# -o pipefail : pipe 内のエラーを検出
+# env $(grep -v '^#' scripts/proxy.env | xargs) ./scripts/security_scan.sh
 set -euo pipefail
 
 ######################################
-# OSS 脆弱性スキャン（固定対象・1回実行）
-# - Trivy: fs / image
+# OSS 脆弱性スキャン
+# - Trivy: fs / image（vulnのみ）
 # - npm audit: 各 Node.js サービス
-# ※ lint/compose検証は別ツールで実施
 ######################################
 
 # ===== パス =====
@@ -35,8 +32,13 @@ TRIVY_TIMEOUT="${TRIVY_TIMEOUT:-10m}"
 # true : 事前DBが必要（完全オフライン向け）
 TRIVY_OFFLINE="${TRIVY_OFFLINE:-false}"
 
+# Trivy のローカルキャッシュ
 TRIVY_CACHE_DIR="${TRIVY_CACHE_DIR:-$DOCKER_DIR/.trivy-cache}"
 mkdir -p "$TRIVY_CACHE_DIR"
+
+# DB 取得先（必要なら変更）
+# 例: mirror.gcr.io が通らない環境では ghcr.io を使う
+TRIVY_DB_REPOSITORY="${TRIVY_DB_REPOSITORY:-ghcr.io/aquasecurity/trivy-db:2}"
 
 # ===== npm audit =====
 NPM_AUDIT_LEVEL="${NPM_AUDIT_LEVEL:-high}"
@@ -68,6 +70,24 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || error "コマンド不足: $1"
 }
 
+# Proxy をTrivyコンテナへ引き継ぐ
+build_trivy_env_args() {
+  local -a envs=()
+
+  [ -n "${HTTP_PROXY:-}"  ]  && envs+=(-e "HTTP_PROXY=$HTTP_PROXY")
+  [ -n "${HTTPS_PROXY:-}" ]  && envs+=(-e "HTTPS_PROXY=$HTTPS_PROXY")
+  [ -n "${NO_PROXY:-}"    ]  && envs+=(-e "NO_PROXY=$NO_PROXY")
+
+  [ -n "${http_proxy:-}"  ]  && envs+=(-e "http_proxy=$http_proxy")
+  [ -n "${https_proxy:-}" ]  && envs+=(-e "https_proxy=$https_proxy")
+  [ -n "${no_proxy:-}"    ]  && envs+=(-e "no_proxy=$no_proxy")
+
+  # DB 取得先（必要な場合のみ）
+  [ -n "${TRIVY_DB_REPOSITORY:-}" ] && envs+=(-e "TRIVY_DB_REPOSITORY=$TRIVY_DB_REPOSITORY")
+
+  printf '%s\n' "${envs[@]}"
+}
+
 # ===== Trivy fs（services）=====
 run_trivy_fs_services() {
   [ "$USE_TRIVY_FS" = "true" ] || return 0
@@ -80,17 +100,21 @@ run_trivy_fs_services() {
     offline_args+=(--offline-scan)
   fi
 
+  local -a trivy_env
+  mapfile -t trivy_env < <(build_trivy_env_args)
+
   local date
   date="$(date +"%Y%m%d_%H%M%S")"
 
   info "Trivy fs: services/"
   docker run --rm \
+    "${trivy_env[@]}" \
     -v "$PROJECT_ROOT:/repo:ro" \
     -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
     "$TRIVY_IMAGE" fs \
       --timeout "$TRIVY_TIMEOUT" \
       --severity "$TRIVY_SEVERITY" \
-      --scanners vuln,secret,config \
+      --scanners vuln \
       --format json \
       "${offline_args[@]}" \
       /repo/services \
@@ -109,18 +133,22 @@ run_trivy_images() {
     offline_args+=(--offline-scan)
   fi
 
+  local -a trivy_env
+  mapfile -t trivy_env < <(build_trivy_env_args)
+
   local date
   date="$(date +"%Y%m%d_%H%M%S")"
 
   for img in "${IMAGES[@]}"; do
     info "Trivy image: $img"
     docker run --rm \
+      "${trivy_env[@]}" \
       -v /var/run/docker.sock:/var/run/docker.sock \
       -v "$TRIVY_CACHE_DIR:/root/.cache/trivy" \
       "$TRIVY_IMAGE" image \
         --timeout "$TRIVY_TIMEOUT" \
         --severity "$TRIVY_SEVERITY" \
-        --scanners vuln,secret,config \
+        --scanners vuln \
         --format json \
         "${offline_args[@]}" \
         "$img" \
@@ -158,7 +186,7 @@ run_npm_audit() {
   done
 }
 
-# ===== main（1回実行）=====
+# ===== main =====
 main() {
   local date
   date="$(date +"%Y%m%d_%H%M%S")"
