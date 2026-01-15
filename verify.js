@@ -1,4 +1,4 @@
-WALLET_DB_JDBC_URL=jdbc:sqlserver://${POSTGRES_DB_HOST}:${MSSQL_DB_PORT};databaseName=${DB_NAME};encrypt=true;trustServerCertificate=true
+WALLET_DB_JDBC_URL=jdbc:postgresql://${POSTGRES_DB_HOST}:${POSTGRES_DB_PORT}/${DB_NAME}
 
 val svc = runCatching { serviceString }.getOrNull().orEmpty()
 
