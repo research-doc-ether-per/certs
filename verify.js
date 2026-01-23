@@ -1,24 +1,77 @@
 const fs = require("fs");
 const path = require("path");
-const swaggerAutogen = require("swagger-autogen")();
-const doc = require("./template");
+const yaml = require("js-yaml");
 
+const errorMessagesPath = path.join(
+  __dirname,
+  "../config/errorMessages.json"
+);
 
-const docsDir = path.join(__dirname, "../docs");
+const outputPath = path.join(
+  __dirname,
+  "../docs/generated-error-responses.yaml"
+);
 
-const outputFile = path.join(docsDir, "swagger.json");
-
-const endpointsFiles = [
-  path.join(__dirname, "../app.js"),
-];
-
-if (!fs.existsSync(docsDir)) {
-  fs.mkdirSync(docsDir, { recursive: true });
-  // eslint-disable-next-line no-console
-  console.log("✔ created docs directory:", docsDir);
+if (!fs.existsSync(errorMessagesPath)) {
+  console.error("❌ errorMessages.json not found:", errorMessagesPath);
+  process.exit(1);
 }
 
-swaggerAutogen(outputFile, endpointsFiles, doc).then(() => {
-  // eslint-disable-next-line no-console
-  console.log("✔ swagger.json generated:", outputFile);
+const errorMessages = JSON.parse(
+  fs.readFileSync(errorMessagesPath, "utf8")
+);
+
+const openApiFragment = {
+  components: {
+    schemas: {
+      ErrorResponse: {
+        type: "object",
+        required: ["code", "message"],
+        properties: {
+          code: { type: "string" },
+          message: { type: "string" },
+          detail: { type: "string", nullable: true }
+        }
+      }
+    },
+    responses: {}
+  }
+};
+
+Object.entries(errorMessages).forEach(([name, def]) => {
+  if (!def || !def.error) {
+    console.warn(`⚠️ skip invalid error definition: ${name}`);
+    return;
+  }
+
+  const { code, message } = def.error;
+
+  openApiFragment.components.responses[name] = {
+    description: name,
+    content: {
+      "application/json": {
+        schema: {
+          $ref: "#/components/schemas/ErrorResponse"
+        },
+        examples: {
+          example: {
+            value: {
+              code,
+              message
+            }
+          }
+        }
+      }
+    }
+  };
 });
+
+const yamlStr = yaml.dump(openApiFragment, {
+  noRefs: true,
+  lineWidth: -1
+});
+
+fs.writeFileSync(outputPath, yamlStr, "utf8");
+
+console.log("✅ Swagger error responses generated:");
+console.log("   →", outputPath);
