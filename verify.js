@@ -1,3 +1,5 @@
+// generate-error-responses.js
+
 const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
@@ -7,14 +9,16 @@ const errorMessagesPath = path.join(
   "../config/errorMessages.json"
 );
 
-const outputPath = path.join(
-  __dirname,
-  "../docs/generated-error-responses.yaml"
-);
+const docsDir = path.join(__dirname, "../docs");
+const outputPath = path.join(docsDir, "error-responses.yaml");
 
 if (!fs.existsSync(errorMessagesPath)) {
-  console.error("❌ errorMessages.json not found:", errorMessagesPath);
+  console.error("errorMessages.json が見つかりません:", errorMessagesPath);
   process.exit(1);
+}
+
+if (!fs.existsSync(docsDir)) {
+  fs.mkdirSync(docsDir, { recursive: true });
 }
 
 const errorMessages = JSON.parse(
@@ -28,9 +32,19 @@ const openApiFragment = {
         type: "object",
         required: ["code", "message"],
         properties: {
-          code: { type: "string" },
-          message: { type: "string" },
-          detail: { type: "string", nullable: true }
+          code: {
+            type: "string",
+            description: "エラーコード"
+          },
+          message: {
+            type: "string",
+            description: "エラーメッセージ"
+          },
+          detail: {
+            type: "string",
+            nullable: true,
+            description: "追加情報（存在する場合のみ）"
+          }
         }
       }
     },
@@ -38,13 +52,13 @@ const openApiFragment = {
   }
 };
 
-Object.entries(errorMessages).forEach(([name, def]) => {
-  if (!def || !def.error) {
-    console.warn(`⚠️ skip invalid error definition: ${name}`);
+Object.entries(errorMessages).forEach(([name, definition]) => {
+  if (!definition || !definition.error) {
+    console.warn("不正なエラー定義のためスキップします:", name);
     return;
   }
 
-  const { code, message } = def.error;
+  const { code, message } = definition.error;
 
   openApiFragment.components.responses[name] = {
     description: name,
@@ -66,12 +80,13 @@ Object.entries(errorMessages).forEach(([name, def]) => {
   };
 });
 
-const yamlStr = yaml.dump(openApiFragment, {
+const yamlString = yaml.dump(openApiFragment, {
   noRefs: true,
   lineWidth: -1
 });
 
-fs.writeFileSync(outputPath, yamlStr, "utf8");
+fs.writeFileSync(outputPath, yamlString, "utf8");
 
-console.log("✅ Swagger error responses generated:");
-console.log("   →", outputPath);
+console.log("error-responses.yaml を生成しました:");
+console.log(outputPath);
+
