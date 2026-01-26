@@ -602,6 +602,19 @@ const parseDesignCsvToJson = (csvText) => {
       if (typeIdx < 0) continue;
 
       const { propName, propIdx, desc, required } = extractFieldCells(row, typeIdx);
+      if ((!propName || propIdx < 0) && currentSection === "responseBody") {
+  if (!current.responseBody) {
+    const rootSchema = parseTypeToSchema(row[typeIdx]);
+
+    if (rootSchema.type === "array") {
+      if (desc) rootSchema.description = desc;
+      current.responseBody = rootSchema;
+      resetPropertyParsingState();
+      continue;
+    }
+  }
+  continue;
+}
       if (!propName || propIdx < 0) continue;
 
       const root = ensureSectionRootSchema(currentSection);
