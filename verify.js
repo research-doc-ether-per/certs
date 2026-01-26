@@ -14,7 +14,7 @@ const logger = log4js.getLogger(`${fileName}`);
 
 /**
  * 文字列をトリムして空なら null にする
- * @param {any} v
+ * @param {string} v
  * @returns {string|null}
  */
 const toStrOrNull = (v) => {
@@ -128,30 +128,20 @@ const parseCsv = (csvText) => {
   }
 };
 
+/**
+ * "必須" っぽいセルか判定（required 判定用）
+ * @param {string} v
+ * @returns {boolean}
+ */
 const isRequiredMark = (v) => {
   const s = (toStrOrNull(v) || "").trim();
   if (!s) return false;
   return s === "○" || s.toLowerCase() === "required" || s === "必須";
 };
 
-const isHeaderWord = (v) => {
-  const s = (toStrOrNull(v) || "").toLowerCase();
-  return (
-    s === "プロパティ" ||
-    s === "property" ||
-    s === "説明" ||
-    s === "description" ||
-    s === "型" ||
-    s === "type" ||
-    s === "requestbody" ||
-    s === "responsebody" ||
-    s === "none"
-  );
-};
-
 /**
- * セルが「型」っぽいか（object[] / object[][] / array<object> など含む）
- * @param {any} raw
+ * タイプ文字列の妥当性チェック（セルが型っぽいか）
+ * @param {string|null} raw
  * @returns {boolean}
  */
 const isTypeLikeCell = (raw) => {
@@ -162,7 +152,7 @@ const isTypeLikeCell = (raw) => {
   if (["string", "integer", "number", "boolean", "object"].includes(vv)) return true;
   if (vv === "object[]") return true;
   if (/^array<.+>$/.test(vv)) return true;
-  if (/^(.+?)(\[\]+)$/.test(vv)) return true; // string[] / object[][] ...
+  if (/^(.+)\[\]+$/.test(vv)) return true; // string[] / object[][] ...
   if (/^Array<.+>$/.test(v)) return true;
   return false;
 };
@@ -181,31 +171,6 @@ const findTypeCellIndex = (row) => {
     return -1;
   } finally {
     logger.debug("findTypeCellIndex end");
-  }
-};
-
-/**
- * required 判定
- * @param {string[]} row
- * @param {number} typeIdx
- * @returns {boolean}
- */
-const detectRequired = (row, typeIdx) => {
-  logger.debug("detectRequired start");
-  try {
-    // 型より右側があればそこを優先
-    if (typeIdx >= 0) {
-      for (let i = typeIdx + 1; i < row.length; i++) {
-        if (isRequiredMark(row[i])) return true;
-      }
-    }
-    // 全体も念のため
-    for (const c of row) {
-      if (isRequiredMark(c)) return true;
-    }
-    return false;
-  } finally {
-    logger.debug("detectRequired end");
   }
 };
 
@@ -231,6 +196,7 @@ const parseTypeToSchema = (rawType) => {
 
     let t = t0.replace(/\s+/g, "").replace(/^Array</i, "array<");
 
+    // array<...> 再帰
     const parseGenericArray = (s) => {
       const m = s.match(/^array<(.+)>$/i);
       if (!m) return null;
@@ -247,6 +213,7 @@ const parseTypeToSchema = (rawType) => {
     const generic = parseGenericArray(t);
     if (generic) return generic;
 
+    // xxx[][]... 再帰
     const suffixMatch = t.match(/^(.+?)(\[\]+)$/);
     if (suffixMatch) {
       const base = suffixMatch[1];
@@ -343,23 +310,69 @@ const isPropertyTableHeaderRow = (row) => {
   }
 };
 
+/**
+ * none 行かどうか
+ * @param {string[]} row
+ * @returns {boolean}
+ */
 const isNoneRow = (row) => {
   const joinedLower = row.map((c) => (toStrOrNull(c) || "").toLowerCase()).join("|");
   return joinedLower.includes("none");
 };
 
 /**
- * 型がある行: 「属性→説明→型→必須」に基づき property/desc を抽出
+ * required 判定（全セル or type右側）
+ * @param {string[]} row
+ * @param {number} typeIdx
+ * @returns {boolean}
+ */
+const detectRequired = (row, typeIdx) => {
+  logger.debug("detectRequired start");
+  try {
+    // typeIdx 右側を優先
+    if (typeIdx >= 0) {
+      for (let i = typeIdx + 1; i < row.length; i++) {
+        if (isRequiredMark(row[i])) return true;
+      }
+    }
+    // 念のため全体も見る
+    for (const c of row) {
+      if (isRequiredMark(c)) return true;
+    }
+    return false;
+  } finally {
+    logger.debug("detectRequired end");
+  }
+};
+
+/**
+ * CSV のルールに基づいて「属性→説明→型→必須」を厳密に抽出する
+ * - typeIdx を起点に、左側最近テキストを description、さらに左側最近テキストを property とする
  * @param {string[]} row
  * @param {number} typeIdx
  * @returns {{ propName: string|null, propIdx: number, desc: string|null, required: boolean }}
  */
-const extractCellsWithType = (row, typeIdx) => {
-  logger.debug("extractCellsWithType start");
+const extractFieldCells = (row, typeIdx) => {
+  logger.debug("extractFieldCells start");
   try {
     if (typeIdx < 0) return { propName: null, propIdx: -1, desc: null, required: false };
 
-    // desc: typeIdx の左で最も近いテキスト
+    const isHeaderWord = (v) => {
+      const s = (toStrOrNull(v) || "").toLowerCase();
+      return (
+        s === "プロパティ" ||
+        s === "property" ||
+        s === "説明" ||
+        s === "description" ||
+        s === "型" ||
+        s === "type" ||
+        s === "requestbody" ||
+        s === "responsebody" ||
+        s === "none"
+      );
+    };
+
+    // description: typeIdx の左側で一番近い非空テキスト
     let desc = null;
     let descIdx = -1;
     for (let i = typeIdx - 1; i >= 0; i--) {
@@ -373,7 +386,7 @@ const extractCellsWithType = (row, typeIdx) => {
       break;
     }
 
-    // prop: desc の左（なければ type の左）で最も近いテキスト
+    // property: description の左側で一番近い非空テキスト
     let propName = null;
     let propIdx = -1;
     const leftStart = descIdx >= 0 ? descIdx - 1 : typeIdx - 1;
@@ -391,51 +404,7 @@ const extractCellsWithType = (row, typeIdx) => {
     const required = detectRequired(row, typeIdx);
     return { propName, propIdx, desc, required };
   } finally {
-    logger.debug("extractCellsWithType end");
-  }
-};
-
-/**
- * 型がない行（Excel→CSV で「property/desc だけの行」に割れるケース）
- * - 右端から desc を拾い、その左の最も近い値を property とする
- * @param {string[]} row
- * @returns {{ propName: string|null, propIdx: number, desc: string|null, required: boolean }}
- */
-const extractCellsWithoutType = (row) => {
-  logger.debug("extractCellsWithoutType start");
-  try {
-    // desc: 最も右の「使える」テキスト
-    let desc = null;
-    let descIdx = -1;
-    for (let i = row.length - 1; i >= 0; i--) {
-      const v = toStrOrNull(row[i]);
-      if (!v) continue;
-      if (isHeaderWord(v)) continue;
-      if (isRequiredMark(v)) continue;
-      if (isTypeLikeCell(v)) continue;
-      desc = v;
-      descIdx = i;
-      break;
-    }
-
-    // prop: desc の左で最も近い「使える」テキスト
-    let propName = null;
-    let propIdx = -1;
-    for (let i = (descIdx >= 0 ? descIdx - 1 : row.length - 1); i >= 0; i--) {
-      const v = toStrOrNull(row[i]);
-      if (!v) continue;
-      if (isHeaderWord(v)) continue;
-      if (isRequiredMark(v)) continue;
-      if (isTypeLikeCell(v)) continue;
-      propName = v;
-      propIdx = i;
-      break;
-    }
-
-    const required = detectRequired(row, -1);
-    return { propName, propIdx, desc, required };
-  } finally {
-    logger.debug("extractCellsWithoutType end");
+    logger.debug("extractFieldCells end");
   }
 };
 
@@ -511,48 +480,24 @@ const addRequiredIfNeeded = (parentSchema, propName, required) => {
   if (!obj.required.includes(propName)) obj.required.push(propName);
 };
 
+/**
+ * schema が「子を持ち得る」か
+ * @param {object} schema
+ * @returns {boolean}
+ */
 const canHaveChildren = (schema) => {
   if (!schema) return false;
   if (schema.type === "object") return true;
-  if (schema.type === "array") return true; // items が object/array になり得る
+  if (schema.type === "array") {
+    const it = schema.items;
+    if (!it) return true;
+    return it.type === "object" || it.type === "array";
+  }
   return false;
 };
 
 /**
- * required が空なら削除（循環防止のため visited 使用）
- * @param {object} schema
- * @param {WeakSet<object>} visited
- * @returns {void}
- */
-const cleanupRequired = (schema, visited) => {
-  if (!schema || typeof schema !== "object") return;
-  if (visited.has(schema)) return;
-  visited.add(schema);
-
-  if (Array.isArray(schema.required) && schema.required.length === 0) {
-    delete schema.required;
-  }
-
-  if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
-    for (const k of Object.keys(schema.properties)) {
-      cleanupRequired(schema.properties[k], visited);
-    }
-  }
-
-  if (schema.type === "array" && schema.items) {
-    cleanupRequired(schema.items, visited);
-  }
-};
-
-/**
  * API 設計CSV（レイアウト型）を JSON へ変換する
- * ルール：
- * - responseBody/requestBody の「最初の有効データ行」で root 判定
- *   A) property 空 + type あり => root 定義（root は object/array/...）
- *   B) property 非空           => root は object、当該行はフィールド
- * - Excel→CSV 分割対策：
- *   property/desc のみ行（type 無し）を pending として保持し、
- *   次行で type だけ（property 空）なら pending と結合してフィールド化
  * @param {string} csvText
  * @returns {{ endpoints: any[] }}
  */
@@ -578,20 +523,15 @@ const parseDesignCsvToJson = (csvText) => {
     let current = null;
     let currentSection = null;
 
-    // depth 推定の基準（セクション内で最初に見えた property の列）
+    // depth 推定の基準（プロパティ名が最初に現れた列）
     let basePropIdx = null;
 
-    // 解析スタック：{ depth: number, schema: object }
-    // root は depth = -1 で固定
+    // { depth, schema }
     let stack = [];
 
-    // pending（depth ごと）：{ propName, desc, required, propIdx }
-    let pendingByDepth = new Map();
-
-    const resetSectionState = () => {
+    const resetPropertyParsingState = () => {
       basePropIdx = null;
       stack = [];
-      pendingByDepth = new Map();
     };
 
     const startNewEndpoint = (desc, api, method) => {
@@ -605,32 +545,21 @@ const parseDesignCsvToJson = (csvText) => {
       endpoints.push(ep);
       current = ep;
       currentSection = null;
-      resetSectionState();
+      resetPropertyParsingState();
     };
 
-    const getSectionRoot = () => {
+    const ensureSectionRootSchema = (sectionKey) => {
       if (!current) return null;
-      if (currentSection === "requestBody") return current.requestBody;
-      if (currentSection === "responseBody") return current.responseBody;
+
+      if (sectionKey === "requestBody") {
+        if (!current.requestBody) current.requestBody = { type: "object", properties: {} };
+        return current.requestBody;
+      }
+      if (sectionKey === "responseBody") {
+        if (!current.responseBody) current.responseBody = { type: "object", properties: {} };
+        return current.responseBody;
+      }
       return null;
-    };
-
-    const setSectionRoot = (schema) => {
-      if (!current) return;
-      if (currentSection === "requestBody") current.requestBody = schema;
-      if (currentSection === "responseBody") current.responseBody = schema;
-    };
-
-    const ensureRootStack = () => {
-      const root = getSectionRoot();
-      if (!root) return;
-      if (stack.length === 0) stack.push({ depth: -1, schema: root });
-    };
-
-    const calcDepth = (propIdx) => {
-      if (propIdx === null || propIdx === undefined || propIdx < 0) return 0;
-      if (basePropIdx === null) basePropIdx = propIdx;
-      return Math.max(0, propIdx - basePropIdx);
     };
 
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -640,7 +569,6 @@ const parseDesignCsvToJson = (csvText) => {
       const methodVal = toStrOrNull(row[methodIdx]);
       const descVal = toStrOrNull(row[descIdx]);
 
-      // 新しい endpoint
       if (apiVal && methodVal) {
         startNewEndpoint(descVal, apiVal, methodVal);
         continue;
@@ -648,126 +576,79 @@ const parseDesignCsvToJson = (csvText) => {
 
       if (!current) continue;
 
-      // section 切替
       const section = detectBodySection(row);
       if (section) {
         currentSection = section;
-        resetSectionState();
+        resetPropertyParsingState();
+        ensureSectionRootSchema(section);
         continue;
       }
 
       if (!currentSection) continue;
 
       if (isPropertyTableHeaderRow(row)) {
-        // 表ヘッダ。pending/stack をリセット
-        resetSectionState();
+        resetPropertyParsingState();
         continue;
       }
 
       if (isNoneRow(row)) {
-        // none の場合は body 自体が null
         if (currentSection === "requestBody") current.requestBody = null;
         if (currentSection === "responseBody") current.responseBody = null;
-        resetSectionState();
+        resetPropertyParsingState();
         continue;
       }
 
       const typeIdx = findTypeCellIndex(row);
+      if (typeIdx < 0) continue;
 
-      // まず（仮）として property/desc を取る
-      let cellInfo = null;
-      if (typeIdx >= 0) {
-        cellInfo = extractCellsWithType(row, typeIdx);
-      } else {
-        cellInfo = extractCellsWithoutType(row);
-      }
+      const { propName, propIdx, desc, required } = extractFieldCells(row, typeIdx);
+      if (!propName || propIdx < 0) continue;
 
-      // depth は「property の列位置」で決める。property が無い行は 0 とみなす
-      const depth = calcDepth(cellInfo.propIdx);
+      const root = ensureSectionRootSchema(currentSection);
+      if (!root) continue;
 
-      // (1) 型が無い行：pending として保存して終了
-      if (typeIdx < 0) {
-        if (cellInfo.propName) {
-          pendingByDepth.set(depth, {
-            propName: cellInfo.propName,
-            desc: cellInfo.desc || null,
-            required: !!cellInfo.required,
-            propIdx: cellInfo.propIdx,
-          });
-        }
-        continue;
-      }
+      if (basePropIdx === null) basePropIdx = propIdx;
+      const depth = Math.max(0, propIdx - basePropIdx);
 
-      // (2) 型があるが property が空：pending と結合できるなら結合
-      if (!cellInfo.propName) {
-        const pending = pendingByDepth.get(depth);
-        if (pending && pending.propName) {
-          cellInfo = {
-            propName: pending.propName,
-            propIdx: pending.propIdx,
-            // 説明は「pending優先、なければ当行」
-            desc: pending.desc || cellInfo.desc || null,
-            required: pending.required || cellInfo.required,
-          };
-          pendingByDepth.delete(depth);
-        }
-      }
-
-      const root = getSectionRoot();
-
-      // (3) root 未確定のときの処理（A/B ルール）
-      if (!root) {
-        if (!cellInfo.propName) {
-          // A) property 空 + type あり => root 定義
-          const rootSchema = parseTypeToSchema(row[typeIdx]);
-          if (cellInfo.desc) rootSchema.description = cellInfo.desc;
-          setSectionRoot(rootSchema);
-          ensureRootStack();
-          // root 定義行は「フィールド追加」しない
-          continue;
-        }
-
-        // B) property 非空 => root は object、当行はフィールド
-        const rootSchema = { type: "object", properties: {} };
-        setSectionRoot(rootSchema);
-        ensureRootStack();
-        // 以降の通常処理でこの行をフィールドとして追加する
-      }
-
-      ensureRootStack();
-
-      // 親スキーマ決定（stack pop）
       while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
         stack.pop();
       }
-      if (stack.length === 0) {
-        // 念のため root を復帰
-        ensureRootStack();
-      }
-      const parentSchema = stack.length > 0 ? stack[stack.length - 1].schema : getSectionRoot();
-      if (!parentSchema) continue;
 
-      // フィールド行として成立するには property が必要
-      if (!cellInfo.propName) {
-        // pending が無いのに property 空の type 行は、root 定義以外では無視
-        continue;
-      }
+      const parentSchema = stack.length === 0 ? root : stack[stack.length - 1].schema;
 
       const schema = parseTypeToSchema(row[typeIdx]);
-      if (cellInfo.desc) schema.description = cellInfo.desc;
+      if (desc) schema.description = desc;
 
-      addChildProperty(parentSchema, cellInfo.propName, schema);
-      addRequiredIfNeeded(parentSchema, cellInfo.propName, !!cellInfo.required);
+      addChildProperty(parentSchema, propName, schema);
+
+      // 必須は基本 requestBody だが、CSVにあればどこでも反映（親オブジェクトに付与）
+      if (required) addRequiredIfNeeded(parentSchema, propName, required);
 
       if (canHaveChildren(schema)) {
         stack.push({ depth, schema });
       }
     }
 
-    // required cleanup
+    // required が空なら削除（全階層）
+    const cleanupRequired = (schema) => {
+      if (!schema || typeof schema !== "object") return;
+
+      if (Array.isArray(schema.required) && schema.required.length === 0) {
+        delete schema.required;
+      }
+
+      if (schema.type === "object" && schema.properties) {
+        for (const k of Object.keys(schema.properties)) cleanupRequired(schema.properties[k]);
+      }
+
+      if (schema.type === "array" && schema.items) {
+        cleanupRequired(schema.items);
+      }
+    };
+
     for (const ep of endpoints) {
-      if (ep.requestBody) cleanupRequired(ep.requestBody, new WeakSet());
-      if (ep.responseBody) cleanupRequired(ep.responseBody, new WeakSet());
+      if (ep.requestBody) cleanupRequired(ep.requestBody);
+      if (ep.responseBody) cleanupRequired(ep.responseBody);
     }
 
     return { endpoints };
@@ -807,7 +688,6 @@ const main = async () => {
         continue;
       }
 
-      // output 設定（※図2と同じ形式を維持）
       const outputDir = path.resolve(__dirname, "..", "output", apiName);
       ensureDir(outputDir);
 
