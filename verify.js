@@ -1,31 +1,36 @@
 /**
- * requestQuery schema → OpenAPI parameters[]
- * @param {object|null} requestQuery
- * @returns {object[]}
+ * requestQuery(schema) を OpenAPI parameters(in=query) に反映する
+ * @param {object} op OpenAPI operation
+ * @param {object|null} requestQuery schema (type: object)
+ * @returns {void}
  */
-const convertRequestQueryToParameters = (requestQuery) => {
-  if (!requestQuery || requestQuery.type !== "object") return [];
+const applyRequestQuery = (op, requestQuery) => {
+  if (!requestQuery || requestQuery.type !== "object") return;
 
-  const properties = requestQuery.properties || {};
-  const requiredList = requestQuery.required || [];
+  const props = requestQuery.properties || {};
+  const requiredList = Array.isArray(requestQuery.required) ? requestQuery.required : [];
 
-  const parameters = [];
+  if (!Array.isArray(op.parameters)) op.parameters = [];
 
-  for (const [name, schema] of Object.entries(properties)) {
-    parameters.push({
+  for (const [name, schema] of Object.entries(props)) {
+    // 既存 query parameter があれば上書き、なければ追加
+    const idx = op.parameters.findIndex((p) => p && p.in === "query" && p.name === name);
+
+    const param = {
       name,
       in: "query",
       required: requiredList.includes(name),
-      description: schema.description || "",
+      description: schema && schema.description ? schema.description : "",
       schema: stripSchemaDescription(schema),
-    });
-  }
+    };
 
-  return parameters;
+    if (idx >= 0) op.parameters[idx] = param;
+    else op.parameters.push(param);
+  }
 };
 
 /**
- * schema から description を除外（parameter 用）
+ * schema から description を除外（parameter.schema 用）
  * @param {object} schema
  * @returns {object}
  */
@@ -51,19 +56,5 @@ const stripSchemaDescription = (schema) => {
 };
 
 
-
-// ===== requestQuery → parameters =====
-const queryParams = convertRequestQueryToParameters(design.requestQuery);
-
-if (queryParams.length > 0) {
-  if (!Array.isArray(op.parameters)) op.parameters = [];
-
-  for (const qp of queryParams) {
-    const exists = op.parameters.some(
-      (p) => p.in === "query" && p.name === qp.name
-    );
-    if (!exists) {
-      op.parameters.push(qp);
-    }
-  }
-}
+// requestQuery 更新
+applyRequestQuery(op, design.requestQuery)
