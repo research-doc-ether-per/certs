@@ -1,34 +1,69 @@
 /**
- * description を正規化する（改行・空白）
- * - 改行コードを \n に統一
- * - 各行の前後空白を trim
- * - 空行は除去
- * @param {string|null} desc
- * @returns {string|null}
+ * requestQuery schema → OpenAPI parameters[]
+ * @param {object|null} requestQuery
+ * @returns {object[]}
  */
-const normalizeDescription = (desc) => {
-  logger.debug("normalizeDescription start");
-  try {
-    const s0 = toStrOrNull(desc);
-    if (!s0) return null;
+const convertRequestQueryToParameters = (requestQuery) => {
+  if (!requestQuery || requestQuery.type !== "object") return [];
 
-    // 改行コード統一
-    let s = s0.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const properties = requestQuery.properties || {};
+  const requiredList = requestQuery.required || [];
 
-    // 各行 trim + 空行除去
-    s = s
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .join("\n");
+  const parameters = [];
 
-    return s.length > 0 ? s : null;
-  } finally {
-    logger.debug("normalizeDescription end");
+  for (const [name, schema] of Object.entries(properties)) {
+    parameters.push({
+      name,
+      in: "query",
+      required: requiredList.includes(name),
+      description: schema.description || "",
+      schema: stripSchemaDescription(schema),
+    });
   }
+
+  return parameters;
 };
 
-const schema = parseTypeToSchema(row[typeIdx]);
-const normalizedDesc = normalizeDescription(desc);
-if (normalizedDesc) schema.description = normalizedDesc;
+/**
+ * schema から description を除外（parameter 用）
+ * @param {object} schema
+ * @returns {object}
+ */
+const stripSchemaDescription = (schema) => {
+  if (!schema || typeof schema !== "object") return schema;
 
+  const copy = { ...schema };
+  delete copy.description;
+
+  if (copy.type === "object" && copy.properties) {
+    const newProps = {};
+    for (const [k, v] of Object.entries(copy.properties)) {
+      newProps[k] = stripSchemaDescription(v);
+    }
+    copy.properties = newProps;
+  }
+
+  if (copy.type === "array" && copy.items) {
+    copy.items = stripSchemaDescription(copy.items);
+  }
+
+  return copy;
+};
+
+
+
+// ===== requestQuery → parameters =====
+const queryParams = convertRequestQueryToParameters(design.requestQuery);
+
+if (queryParams.length > 0) {
+  if (!Array.isArray(op.parameters)) op.parameters = [];
+
+  for (const qp of queryParams) {
+    const exists = op.parameters.some(
+      (p) => p.in === "query" && p.name === qp.name
+    );
+    if (!exists) {
+      op.parameters.push(qp);
+    }
+  }
+}
