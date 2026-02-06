@@ -1,6 +1,5 @@
 /**
- * パスをセグメント配列に変換する
- *
+ * パスをセグメント配列に分割する
  */
 const splitPath = (p) =>
   (p || "")
@@ -10,8 +9,7 @@ const splitPath = (p) =>
     .filter(Boolean);
 
 /**
- * テンプレートパスと実リクエストパスが一致するか判定する
- *
+ * テンプレート（:param）と実パスが一致するか判定する
  */
 const matchTemplatePath = (templateSegs, requestSegs) => {
   if (templateSegs.length !== requestSegs.length) return false;
@@ -22,44 +20,53 @@ const matchTemplatePath = (templateSegs, requestSegs) => {
 
     if (!req) return false;
 
-    // 動的パラメータ（:userId など）は常に一致
-    if (tpl.startsWith(":")) continue;
-
-    // 静的セグメントは完全一致必須
-    if (tpl !== req) return false;
+    if (tpl.startsWith(":")) continue; 
+    if (tpl !== req) return false;     
   }
 
   return true;
 };
 
+const parseKey = (key) => {
+  const idx = key.indexOf("_");
+  if (idx <= 0) {
+    return { method: null, templatePath: null };
+  }
+
+  const method = key.slice(0, idx).toUpperCase();
+  const templatePath = key.slice(idx + 1);
+
+  return { method, templatePath };
+};
+
 /**
- * api-meta.json を内部ルールに変換する
- *
- * - 毎リクエストで split しないよう事前に分解
- * - 静的セグメント数が多いものを優先（より具体的な API）
+ * api-meta.json を内部ルールに変換し、より具体的なものを優先する
  */
 const apiMetaRules = Object.entries(apiMetaMap)
   .map(([key, meta]) => {
-    const [method, ...pathParts] = key.split(" ");
-    const templatePath = pathParts.join(" ").trim();
+    const { method, templatePath } = parseKey(key);
+
     const templateSegs = splitPath(templatePath);
+    const staticCount = templateSegs.filter((s) => !s.startsWith(":")).length;
 
     return {
-      method: (method || "").toUpperCase(),
+      key,
+      method,
       templatePath,
       templateSegs,
-      staticCount: templateSegs.filter((s) => !s.startsWith(":")).length,
+      staticCount,
       meta,
     };
   })
-  // より具体的なルールを優先
+  .filter((r) => r.method && r.templatePath)
   .sort((a, b) => b.staticCount - a.staticCount);
 
 /**
- * リクエストから APIメタ情報を解決する
+ * リクエストから APIメタ情報（apiId/apiName）を解決する
  */
 const resolveApiMeta = (req) => {
   const method = (req.method || "").toUpperCase();
+  
   const requestSegs = splitPath(req.path);
 
   for (const rule of apiMetaRules) {
@@ -70,6 +77,6 @@ const resolveApiMeta = (req) => {
     }
   }
 
-  // 未一致（設定漏れ・404 等）
+  // 未一致（設定漏れ/404 等）
   return { apiId: null, apiName: null };
 };
