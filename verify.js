@@ -1,24 +1,19 @@
 // https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-12
-const fs = require('fs')
+const mergeByKey = (arr1, arr2) => {
+  const map = new Map()
 
-const getSupportedIssuersFromFile = (path = '.env') => {
-  if (!fs.existsSync(path)) return []
+  ;[...arr1, ...arr2].forEach(item => {
+    if (map.has(item.key)) {
+      map.set(item.key, {
+        ...map.get(item.key),
+        ...item
+      })
+    } else {
+      map.set(item.key, item)
+    }
+  })
 
-  const lines = fs.readFileSync(path, 'utf-8').split('\n')
-
-  return lines
-    .map(line => line.trim())
-    .filter(line =>
-      line &&
-      !line.startsWith('#') &&
-      line.startsWith('SUPPORTED_VERIFIABLE_ISSUER_')
-    )
-    .map(line => {
-      const index = line.indexOf('=')
-      if (index === -1) return null
-      return line.slice(index + 1).trim()
-    })
-    .filter(Boolean)
+  return Array.from(map.values())
 }
 
-const issuers = getSupportedIssuersFromFile()
+const result = mergeByKey(arr1, arr2)
