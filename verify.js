@@ -1,9 +1,12 @@
-
 const cbor = require('cbor')
 const base64url = require('base64url')
+const log4js = require('log4js')
+
+const logger = log4js.getLogger()
+logger.level = 'info'
 
 /**
- * COSE Header のキー定義
+ * COSE Header のラベル定義
  */
 const COSE_HEADER_LABELS = {
   1: 'alg',
@@ -21,40 +24,59 @@ const COSE_ALG_LABELS = {
 }
 
 /**
- * Buffer を見やすい形式に変換する
+ * Buffer を再帰解析しやすい形式に変換する
+ */
+const decodeBuffer = (buffer) => {
+  const result = {
+    type: 'Buffer',
+    hex: buffer.toString('hex')
+  }
+
+  try {
+    result.utf8 = buffer.toString('utf8')
+  } catch (err) {
+    // 何もしない
+  }
+
+  try {
+    const decoded = cbor.decodeFirstSync(buffer)
+    result.cbor = normalizeValue(decoded)
+  } catch (err) {
+    // CBOR でない場合は何もしない
+  }
+
+  return result
+}
+
+/**
+ * 任意の値を再帰的に展開する
  */
 const normalizeValue = (value) => {
   if (Buffer.isBuffer(value)) {
-    return {
-      type: 'Buffer',
-      hex: value.toString('hex'),
-      utf8: (() => {
-        try {
-          return value.toString('utf8')
-        } catch {
-          return null
-        }
-      })()
-    }
+    return decodeBuffer(value)
   }
 
   if (value instanceof Map) {
     const obj = {}
+
     for (const [k, v] of value.entries()) {
       obj[String(k)] = normalizeValue(v)
     }
+
     return obj
   }
 
   if (Array.isArray(value)) {
-    return value.map(normalizeValue)
+    return value.map((item) => normalizeValue(item))
   }
 
   if (value && typeof value === 'object') {
     const obj = {}
+
     for (const [k, v] of Object.entries(value)) {
       obj[k] = normalizeValue(v)
     }
+
     return obj
   }
 
@@ -62,7 +84,7 @@ const normalizeValue = (value) => {
 }
 
 /**
- * Protected Header の内容を解析する
+ * protected header をラベル付きで解析する
  */
 const parseProtectedHeader = (protectedHeaderBuffer) => {
   const protectedHeaderMap = cbor.decodeFirstSync(protectedHeaderBuffer)
@@ -71,58 +93,88 @@ const parseProtectedHeader = (protectedHeaderBuffer) => {
   const labeledEntries = {}
 
   for (const [key, value] of protectedHeaderMap.entries()) {
+    const keyName = COSE_HEADER_LABELS[key] || `unknown(${key})`
+
     rawEntries.push({
       key,
-      keyName: COSE_HEADER_LABELS[key] || `unknown(${key})`,
+      keyName,
       value: normalizeValue(value)
     })
 
-    const label = COSE_HEADER_LABELS[key] || `unknown(${key})`
-
     if (key === 1) {
-      labeledEntries[label] = {
+      labeledEntries[keyName] = {
         raw: value,
         name: COSE_ALG_LABELS[value] || `unknown(${value})`
       }
     } else if (key === 4 && Buffer.isBuffer(value)) {
-      labeledEntries[label] = {
-        raw: value,
-        hex: value.toString('hex'),
-        utf8: value.toString('utf8')
+      labeledEntries[keyName] = {
+        raw: normalizeValue(value),
+        utf8: value.toString('utf8'),
+        hex: value.toString('hex')
       }
     } else {
-      labeledEntries[label] = normalizeValue(value)
+      labeledEntries[keyName] = normalizeValue(value)
     }
   }
 
   return {
-    rawMap: protectedHeaderMap,
-    normalized: normalizeValue(protectedHeaderMap),
+    rawMap: normalizeValue(protectedHeaderMap),
     rawEntries,
     labeledEntries
   }
 }
 
 /**
- * Unprotected Header の内容を解析する
+ * unprotected header を解析する
  */
 const parseUnprotectedHeader = (unprotectedHeader) => {
-  if (unprotectedHeader instanceof Map) {
+  return {
+    raw: normalizeValue(unprotectedHeader)
+  }
+}
+
+/**
+ * payload を解析する
+ */
+const parsePayload = (payloadBuffer) => {
+  if (!payloadBuffer) {
     return {
-      rawMap: unprotectedHeader,
-      normalized: normalizeValue(unprotectedHeader)
+      rawBuffer: null,
+      decoded: null
     }
   }
 
+  let decoded = null
+
+  try {
+    decoded = cbor.decodeFirstSync(payloadBuffer)
+  } catch (err) {
+    decoded = null
+  }
+
   return {
-    rawMap: unprotectedHeader,
-    normalized: normalizeValue(unprotectedHeader)
+    rawBuffer: normalizeValue(payloadBuffer),
+    decoded: normalizeValue(decoded)
+  }
+}
+
+/**
+ * signature を解析する
+ */
+const parseSignature = (signatureBuffer) => {
+  if (!signatureBuffer) {
+    return null
+  }
+
+  return {
+    rawBuffer: normalizeValue(signatureBuffer),
+    hex: signatureBuffer.toString('hex'),
+    length: signatureBuffer.length
   }
 }
 
 /**
  * issuerAuth（COSE_Sign1）を解析する
- * issuerAuth はすでに credential の decode 結果から取り出した値を想定
  */
 const parseIssuerAuth = (issuerAuth) => {
   if (!Array.isArray(issuerAuth) || issuerAuth.length !== 4) {
@@ -134,20 +186,11 @@ const parseIssuerAuth = (issuerAuth) => {
   const payloadBuffer = issuerAuth[2]
   const signatureBuffer = issuerAuth[3]
 
-  const protectedHeader = parseProtectedHeader(protectedHeaderBuffer)
-  const unprotected = parseUnprotectedHeader(unprotectedHeader)
-
-  const payloadDecoded = payloadBuffer ? cbor.decodeFirstSync(payloadBuffer) : null
-
   return {
-    protectedHeaderBuffer,
-    protectedHeader,
-    unprotectedHeader,
-    unprotected,
-    payloadBuffer,
-    payloadDecoded: normalizeValue(payloadDecoded),
-    signatureBuffer,
-    signatureHex: Buffer.isBuffer(signatureBuffer) ? signatureBuffer.toString('hex') : null
+    protectedHeader: parseProtectedHeader(protectedHeaderBuffer),
+    unprotectedHeader: parseUnprotectedHeader(unprotectedHeader),
+    payload: parsePayload(payloadBuffer),
+    signature: parseSignature(signatureBuffer)
   }
 }
 
@@ -155,70 +198,79 @@ const parseIssuerAuth = (issuerAuth) => {
  * credential（Base64URL(CBOR(IssuerSigned))）を解析する
  */
 const parseMdocCredential = (credential) => {
-  // Base64URL → Buffer
   const credentialBuffer = base64url.toBuffer(credential)
-
-  // CBOR(IssuerSigned) を decode
   const issuerSigned = cbor.decodeFirstSync(credentialBuffer)
 
-  // issuerSigned の中身を取得
-  const namespaces = issuerSigned?.nameSpaces || issuerSigned?.namespaces || issuerSigned?.value?.nameSpaces || issuerSigned?.value?.namespaces
-  const issuerAuth = issuerSigned?.issuerAuth || issuerSigned?.value?.issuerAuth
+  const namespaces =
+    issuerSigned?.nameSpaces ||
+    issuerSigned?.namespaces ||
+    issuerSigned?.value?.nameSpaces ||
+    issuerSigned?.value?.namespaces
+
+  const issuerAuth =
+    issuerSigned?.issuerAuth ||
+    issuerSigned?.value?.issuerAuth
 
   if (!issuerAuth) {
     throw new Error('issuerAuth not found in decoded credential')
   }
 
-  const parsedIssuerAuth = parseIssuerAuth(issuerAuth)
-
   return {
     credential,
-    credentialBufferHex: credentialBuffer.toString('hex'),
+    credentialBuffer: normalizeValue(credentialBuffer),
     issuerSigned: normalizeValue(issuerSigned),
     namespaces: normalizeValue(namespaces),
     issuerAuth: normalizeValue(issuerAuth),
-    parsedIssuerAuth
+    parsedIssuerAuth: parseIssuerAuth(issuerAuth)
   }
 }
 
 /**
- * 解析結果を見やすく出力する
+ * 解析結果を log4js で出力する
  */
-const printMdocCredentialInfo = (result) => {
-  console.log('===== credential =====')
-  console.log(result.credential)
+const logParsedMdocCredential = (result) => {
+  logger.info('===== credential =====')
+  logger.info(JSON.stringify(result.credential, null, 2))
 
-  console.log('\n===== credentialBufferHex =====')
-  console.log(result.credentialBufferHex)
+  logger.info('===== credentialBuffer =====')
+  logger.info(JSON.stringify(result.credentialBuffer, null, 2))
 
-  console.log('\n===== namespaces =====')
-  console.dir(result.namespaces, { depth: null })
+  logger.info('===== issuerSigned =====')
+  logger.info(JSON.stringify(result.issuerSigned, null, 2))
 
-  console.log('\n===== issuerAuth =====')
-  console.dir(result.issuerAuth, { depth: null })
+  logger.info('===== namespaces =====')
+  logger.info(JSON.stringify(result.namespaces, null, 2))
 
-  console.log('\n===== protected header =====')
-  console.dir(result.parsedIssuerAuth.protectedHeader.labeledEntries, { depth: null })
+  logger.info('===== issuerAuth =====')
+  logger.info(JSON.stringify(result.issuerAuth, null, 2))
 
-  console.log('\n===== unprotected header =====')
-  console.dir(result.parsedIssuerAuth.unprotected.normalized, { depth: null })
+  logger.info('===== protectedHeader =====')
+  logger.info(JSON.stringify(result.parsedIssuerAuth.protectedHeader, null, 2))
 
-  console.log('\n===== payload decoded =====')
-  console.dir(result.parsedIssuerAuth.payloadDecoded, { depth: null })
+  logger.info('===== unprotectedHeader =====')
+  logger.info(JSON.stringify(result.parsedIssuerAuth.unprotectedHeader, null, 2))
 
-  console.log('\n===== signature hex =====')
-  console.log(result.parsedIssuerAuth.signatureHex)
+  logger.info('===== payload =====')
+  logger.info(JSON.stringify(result.parsedIssuerAuth.payload, null, 2))
+
+  logger.info('===== signature =====')
+  logger.info(JSON.stringify(result.parsedIssuerAuth.signature, null, 2))
 }
 
 /**
- * 使用例
+ * 実行用サンプル
  */
 const main = () => {
-  const credential = '这里替换成 issuer 返回的 credential 字符串'
+  try {
+    const credential = '这里替换成 issuer 返回的 credential'
 
-  const result = parseMdocCredential(credential)
+    const result = parseMdocCredential(credential)
 
-  printMdocCredentialInfo(result)
+    logParsedMdocCredential(result)
+  } catch (err) {
+    logger.error('mdoc credential 解析失敗')
+    logger.error(err)
+  }
 }
 
 main()
