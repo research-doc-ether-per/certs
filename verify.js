@@ -294,6 +294,10 @@ const logParsedMdocCredential = (result) => {
     logger.info('===== X509 Certificates =====');
     logger.info(JSON.stringify(certInfo, null, 2));
   }
+
+  // payload内の具体的なデータをもう一度確認
+  logger.info('===== payload decoded =====');
+  logger.info(JSON.stringify(result.parsedIssuerAuth.payload.decoded, null, 2));
 };
 
 /**
