@@ -32,7 +32,7 @@ val issuerKeyInfo = COSECryptoProviderKeyInfo(
     algorithmID = AlgorithmID.ECDSA_256,
     publicKey = issuerKey,
     privateKey = null,
-    x5Chain = emptyList(), // 如果这里报类型错，再补具体泛型
+    x5Chain = listOf(),
     trustedRootCAs = getAdditionalTrustedRootCAs(session)
 )
 logger.info { "verifyMdoc issuerKeyInfo = $issuerKeyInfo" }
