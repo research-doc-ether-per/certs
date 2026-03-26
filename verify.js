@@ -1,3 +1,11 @@
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
 private fun resolveMdocNamespaceElement(document: JsonObject, path: String): JsonElement? {
     val regex = Regex(
         """^\$\['issuerSigned']\['nameSpaces']\['([^']+)']\[\?\(@\.elementIdentifier == '([^']+)'\)]\.elementValue$"""
@@ -8,15 +16,16 @@ private fun resolveMdocNamespaceElement(document: JsonObject, path: String): Jso
     val namespace = match.groupValues[1]
     val elementIdentifier = match.groupValues[2]
 
-    val items = document["issuerSigned"]
-        ?.jsonObject
-        ?.get("nameSpaces")
-        ?.jsonObject
-        ?.get(namespace)
-        ?.jsonArray
-        ?: return null
+    val issuerSignedElement = document["issuerSigned"] ?: return null
+    val issuerSignedObject = issuerSignedElement.jsonObject
 
-    val matchedItem = items.firstOrNull { item ->
+    val nameSpacesElement = issuerSignedObject["nameSpaces"] ?: return null
+    val nameSpacesObject = nameSpacesElement.jsonObject
+
+    val namespaceElement = nameSpacesObject[namespace] ?: return null
+    val items: JsonArray = namespaceElement.jsonArray
+
+    val matchedItem = items.firstOrNull { item: JsonElement ->
         val obj = item.jsonObject
         obj["elementIdentifier"]?.jsonPrimitive?.contentOrNull == elementIdentifier
     } ?: return null
@@ -24,29 +33,7 @@ private fun resolveMdocNamespaceElement(document: JsonObject, path: String): Jso
     return matchedItem.jsonObject["elementValue"]
 }
 
-fun filterConstraint(document: JsonObject, field: Field): Boolean {
-    log.trace { "Processing constraint field: ${field.name ?: field.id ?: field}" }
-
-    val resolvedPath = field.path.firstNotNullOfOrNull { path ->
-        resolveMdocNamespaceElement(document, path)
-            ?: document.resolveOrNull(getJsonPath(path))
-    }
-
-    log.trace { "Result of resolving ${field.path}: $resolvedPath" }
-
-    return if (resolvedPath == null) {
-        log.trace { "Unresolved field, failing constraint (Path ${field.path} not found in document $document)." }
-        false
-    } else {
-        log.trace { "Processing field filter: ${field.filter}" }
-        if (field.filter != null) {
-            val schema = JsonSchema.fromJsonElement(field.filter)
-            when {
-                field.filter["type"]?.jsonPrimitive?.contentOrNull?.lowercase() == "string" && resolvedPath is JsonArray ->
-                    resolvedPath.any { schema.validate(it, OutputCollector.flag()).valid }
-
-                else -> schema.validate(resolvedPath, OutputCollector.flag()).valid
-            }
-        } else true
-    }
+val resolvedPath = field.path.firstNotNullOfOrNull { path: String ->
+    resolveMdocNamespaceElement(document, path)
+        ?: document.resolveOrNull(getJsonPath(path))
 }
