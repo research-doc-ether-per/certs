@@ -65,13 +65,21 @@ const applyExampleToSchema = (schema, exampleData) => {
         !Array.isArray(currentExample)
       ) {
         const placeholderKey = propertyKeys[0]
+        const templateSchema = node.properties[placeholderKey]
         const actualExampleKeys = Object.keys(currentExample)
 
         if (actualExampleKeys.length > 0) {
-          const firstActualKey = actualExampleKeys[0]
-          walk(node.properties[placeholderKey], currentExample[firstActualKey])
+          const newProperties = {}
+
+          for (const actualKey of actualExampleKeys) {
+            const copiedSchema = JSON.parse(JSON.stringify(templateSchema))
+            walk(copiedSchema, currentExample[actualKey])
+            newProperties[actualKey] = copiedSchema
+          }
+
+          node.properties = newProperties
         } else {
-          walk(node.properties[placeholderKey], undefined)
+          walk(templateSchema, undefined)
         }
 
         return
