@@ -1,52 +1,33 @@
+const normalizeDescription = (value) => {
+  if (typeof value !== 'string') return value
 
-const normalizeSchemaForOpenApi = (schema) => {
-  logger.debug('normalizeSchemaForOpenApi start')
+  const lines = value
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
 
-  logger.debug('schema: ', schema)
-  try {
-    if (!schema || typeof schema !== 'object') return null
+  const result = []
+  let inList = false
 
-    const copy = JSON.parse(JSON.stringify(schema))
-
-    const normalizeDescription = (value) => {
-      if (typeof value !== 'string') return value
-
-      return value
-        .replace(/\\r\\n/g, '\n')
-        .replace(/\\n/g, '\n')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .split('\n')
-        .map((line) => line.trim())
-        .join('\n')
-        .trim()
+  for (const line of lines) {
+    if (/^[-・•]\s*/.test(line)) {
+      if (!inList) {
+        result.push('')
+        inList = true
+      }
+      result.push('- ' + line.replace(/^[-・•]\s*/, ''))
+    } else {
+      if (inList) {
+        result.push('') 
+        inList = false
+      }
+      result.push(line)
     }
-
-    const walk = (node) => {
-      if (!node || typeof node !== 'object') return
-
-      if (typeof node.description === 'string') {
-        node.description = normalizeDescription(node.description)
-      }
-
-      if (node.type === 'object') {
-        if (!node.properties) node.properties = {}
-        for (const k of Object.keys(node.properties)) walk(node.properties[k])
-      }
-
-      if (node.type === 'array') {
-        if (!node.items) node.items = { type: 'object', properties: {} }
-        walk(node.items)
-      }
-
-      if (Array.isArray(node.required) && node.required.length === 0) {
-        delete node.required
-      }
-    }
-
-    walk(copy)
-    return copy
-  } finally {
-    logger.debug('normalizeSchemaForOpenApi end')
   }
+
+  return result.join('\n')
 }
