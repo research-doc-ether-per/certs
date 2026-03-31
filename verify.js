@@ -1,3 +1,7 @@
+const isPlaceholderKey = (key) => {
+  return typeof key === 'string' && /^\{.+\}$/.test(key)
+}
+
 const getDefaultExample = (type) => {
   switch (type) {
     case 'string':
@@ -49,17 +53,39 @@ const applyExampleToSchema = (schema, exampleData) => {
         node.example = '{}'
       }
 
-      if (hasProperties) {
-        for (const key of Object.keys(node.properties)) {
-          const childExample =
-            currentExample &&
-            typeof currentExample === 'object' &&
-            !Array.isArray(currentExample)
-              ? currentExample[key]
-              : undefined
+      if (!hasProperties) return
 
-          walk(node.properties[key], childExample)
+      const propertyKeys = Object.keys(node.properties)
+
+      if (
+        propertyKeys.length === 1 &&
+        isPlaceholderKey(propertyKeys[0]) &&
+        currentExample &&
+        typeof currentExample === 'object' &&
+        !Array.isArray(currentExample)
+      ) {
+        const placeholderKey = propertyKeys[0]
+        const actualExampleKeys = Object.keys(currentExample)
+
+        if (actualExampleKeys.length > 0) {
+          const firstActualKey = actualExampleKeys[0]
+          walk(node.properties[placeholderKey], currentExample[firstActualKey])
+        } else {
+          walk(node.properties[placeholderKey], undefined)
         }
+
+        return
+      }
+
+      for (const key of propertyKeys) {
+        const childExample =
+          currentExample &&
+          typeof currentExample === 'object' &&
+          !Array.isArray(currentExample)
+            ? currentExample[key]
+            : undefined
+
+        walk(node.properties[key], childExample)
       }
 
       return
@@ -78,18 +104,18 @@ const applyExampleToSchema = (schema, exampleData) => {
         node.example = '[]'
       }
 
-      if (node.items && typeof node.items === 'object') {
-        const firstItemExample =
-          Array.isArray(currentExample) && currentExample.length > 0
-            ? currentExample[0]
-            : undefined
+      if (!node.items || typeof node.items !== 'object') return
 
-        if (hasItemProperties) {
-          walk(node.items, firstItemExample)
-        } else {
-          node.items.example =
-            firstItemExample !== undefined ? safeStringify(firstItemExample) : '{}'
-        }
+      const firstItemExample =
+        Array.isArray(currentExample) && currentExample.length > 0
+          ? currentExample[0]
+          : undefined
+
+      if (hasItemProperties) {
+        walk(node.items, firstItemExample)
+      } else {
+        node.items.example =
+          firstItemExample !== undefined ? safeStringify(firstItemExample) : '{}'
       }
 
       return
