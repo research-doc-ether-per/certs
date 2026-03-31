@@ -1,3 +1,11 @@
+const safeStringify = (value) => {
+  try {
+    return JSON.stringify(value)
+  } catch (e) {
+    return ''
+  }
+}
+
 const applyExampleToSchema = (schema, exampleData) => {
   if (!schema || typeof schema !== 'object') return
 
@@ -25,15 +33,12 @@ const applyExampleToSchema = (schema, exampleData) => {
 
       if (hasProperties) {
         for (const key of Object.keys(node.properties)) {
-          const childExample = example ? example[key] : undefined
+          const childExample =
+            example && typeof example === 'object' ? example[key] : undefined
           walk(node.properties[key], childExample)
         }
       } else {
-        if (example !== undefined) {
-          node.example = JSON.stringify(example)
-        } else {
-          node.example = '{}'
-        }
+        node.example = example !== undefined ? safeStringify(example) : '{}'
       }
 
       return
@@ -49,14 +54,14 @@ const applyExampleToSchema = (schema, exampleData) => {
       if (hasItemProperties) {
         if (Array.isArray(example) && example.length > 0) {
           walk(node.items, example[0])
-          node.example = JSON.stringify(example)
+          node.example = safeStringify(example.slice(0, 1))
         } else {
           walk(node.items, undefined)
           node.example = '[]'
         }
       } else {
-        if (example !== undefined) {
-          node.example = JSON.stringify(example)
+        if (Array.isArray(example)) {
+          node.example = safeStringify(example.slice(0, 1))
         } else {
           node.example = '[]'
         }
