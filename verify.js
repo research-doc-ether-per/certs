@@ -1,3 +1,17 @@
+const getDefaultExample = (type) => {
+  switch (type) {
+    case 'string':
+      return ''
+    case 'integer':
+    case 'number':
+      return 0
+    case 'boolean':
+      return false
+    default:
+      return ''
+  }
+}
+
 const safeStringify = (value) => {
   try {
     return JSON.stringify(value)
@@ -9,18 +23,16 @@ const safeStringify = (value) => {
 const applyExampleToSchema = (schema, exampleData) => {
   if (!schema || typeof schema !== 'object') return
 
-  const walk = (node, example) => {
+  const walk = (node, currentExample) => {
     if (!node || typeof node !== 'object') return
 
     const isLeafType = ['string', 'integer', 'number', 'boolean'].includes(node.type)
 
     if (isLeafType) {
-      if (example !== undefined) {
-        node.example = example
+      if (currentExample !== undefined) {
+        node.example = currentExample
       } else {
-        if (node.type === 'string') node.example = ''
-        if (node.type === 'integer' || node.type === 'number') node.example = 0
-        if (node.type === 'boolean') node.example = false
+        node.example = getDefaultExample(node.type)
       }
       return
     }
@@ -31,14 +43,23 @@ const applyExampleToSchema = (schema, exampleData) => {
         typeof node.properties === 'object' &&
         Object.keys(node.properties).length > 0
 
+      if (currentExample !== undefined) {
+        node.example = safeStringify(currentExample)
+      } else {
+        node.example = '{}'
+      }
+
       if (hasProperties) {
         for (const key of Object.keys(node.properties)) {
           const childExample =
-            example && typeof example === 'object' ? example[key] : undefined
+            currentExample &&
+            typeof currentExample === 'object' &&
+            !Array.isArray(currentExample)
+              ? currentExample[key]
+              : undefined
+
           walk(node.properties[key], childExample)
         }
-      } else {
-        node.example = example !== undefined ? safeStringify(example) : '{}'
       }
 
       return
@@ -51,19 +72,23 @@ const applyExampleToSchema = (schema, exampleData) => {
         node.items.properties &&
         Object.keys(node.items.properties).length > 0
 
-      if (hasItemProperties) {
-        if (Array.isArray(example) && example.length > 0) {
-          walk(node.items, example[0])
-          node.example = safeStringify(example.slice(0, 1))
-        } else {
-          walk(node.items, undefined)
-          node.example = '[]'
-        }
+      if (Array.isArray(currentExample)) {
+        node.example = safeStringify(currentExample)
       } else {
-        if (Array.isArray(example)) {
-          node.example = safeStringify(example.slice(0, 1))
+        node.example = '[]'
+      }
+
+      if (node.items && typeof node.items === 'object') {
+        const firstItemExample =
+          Array.isArray(currentExample) && currentExample.length > 0
+            ? currentExample[0]
+            : undefined
+
+        if (hasItemProperties) {
+          walk(node.items, firstItemExample)
         } else {
-          node.example = '[]'
+          node.items.example =
+            firstItemExample !== undefined ? safeStringify(firstItemExample) : '{}'
         }
       }
 
