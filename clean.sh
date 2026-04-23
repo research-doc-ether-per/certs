@@ -16,7 +16,7 @@ unset http_proxy https_proxy ftp_proxy HTTP_PROXY HTTPS_PROXY FTP_PROXY NO_PROXY
 sudo sed -i '/^http_proxy=/d;/^https_proxy=/d;/^ftp_proxy=/d;/^HTTP_PROXY=/d;/^HTTPS_PROXY=/d;/^FTP_PROXY=/d;/^NO_PROXY=/d;/^no_proxy=/d' /etc/environment
 
 if [ -f "$BASHRC_PATH" ]; then
-  sed -i '/export http_proxy=/d;/export https_proxy=/d;/d;/export HTTP_PROXY=/d;/export HTTPS_PROXY=/d;/export FTP_PROXY=/d;/export NO_PROXY=/d;/export no_proxy=/d' "$BASHRC_PATH"
+  sed -i '/export http_proxy=/d;/export https_proxy=/d;/export ftp_proxy=/d;/export HTTP_PROXY=/d;/export HTTPS_PROXY=/d;/export FTP_PROXY=/d;/export NO_PROXY=/d;/export no_proxy=/d' "$BASHRC_PATH"
 fi
 
 git config --global --unset http.proxy 2>/dev/null || true
@@ -73,3 +73,4 @@ sudo systemctl daemon-reload
 sudo systemctl restart docker
 
 echo "プロキシ設定と証明書設定の削除が完了しました。"
+echo "必要に応じて、新しいターミナルを開いて再確認してください。"
