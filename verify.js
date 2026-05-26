@@ -9,11 +9,18 @@
  * locale が未設定の場合は空文字を返す
  */
 const normalizeLocale = (locale) => {
+  console.debug('*** normalizeLocale ***');
+  console.debug('locale:', locale);
+
   if (!locale) {
+    console.debug('return:', '');
     return '';
   }
 
-  return locale.toLowerCase().split('-')[0];
+  const result = locale.toLowerCase().split('-')[0];
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -26,17 +33,24 @@ const normalizeLocale = (locale) => {
  * 正規化および重複除外後の locale 配列
  */
 const normalizeLocales = (locales = []) => {
+  console.debug('*** normalizeLocales ***');
+  console.debug('locales:', locales);
+
   if (!Array.isArray(locales)) {
+    console.debug('return:', []);
     return [];
   }
 
-  return [
+  const result = [
     ...new Set(
       locales
         .map((locale) => normalizeLocale(locale))
         .filter(Boolean)
     ),
   ];
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -47,11 +61,20 @@ const normalizeLocales = (locales = []) => {
  * ブラウザ環境ではない場合は空配列を返す
  */
 const getBrowserLocales = () => {
+  console.debug('*** getBrowserLocales ***');
+
   if (typeof window === 'undefined') {
+    console.debug('window is undefined');
+    console.debug('return:', []);
     return [];
   }
 
-  return normalizeLocales(navigator.languages || []);
+  console.debug('navigator.languages:', navigator.languages);
+
+  const result = normalizeLocales(navigator.languages || []);
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -74,29 +97,54 @@ const getBrowserLocales = () => {
  * 一致するものがない場合は null を返す
  */
 const getDisplayByLocales = (displayList = [], locales = []) => {
+  console.debug('*** getDisplayByLocales ***');
+  console.debug('displayList:', displayList);
+  console.debug('locales:', locales);
+
   if (!Array.isArray(displayList) || displayList.length === 0) {
+    console.debug('displayList is empty or not array');
+    console.debug('return:', null);
     return null;
   }
 
   if (!Array.isArray(locales) || locales.length === 0) {
+    console.debug('locales is empty or not array');
+    console.debug('return:', null);
     return null;
   }
 
   for (const locale of locales) {
+    console.debug('checking locale:', locale);
+
     const matchedDisplay = displayList.find((display) => {
-      return normalizeLocale(display.locale) === locale;
+      const displayLocale = normalizeLocale(display.locale);
+      const isMatched = displayLocale === locale;
+
+      console.debug('display:', display);
+      console.debug('displayLocale:', displayLocale);
+      console.debug('isMatched:', isMatched);
+
+      return isMatched;
     });
 
     if (matchedDisplay) {
+      console.debug('matchedDisplay:', matchedDisplay);
+      console.debug('return:', matchedDisplay);
       return matchedDisplay;
     }
   }
 
+  console.debug('no matched display');
+  console.debug('return:', null);
   return null;
 };
 
 /**
  * credential type のベース名を取得する関数
+ *
+ * 例：
+ *   Awards_jwt_vc_json → Awards
+ *   Awards_vc+sd-jwt  → Awards
  *
  * @param {string} credentialType
  * supportedCredentialTypes の key
@@ -105,9 +153,18 @@ const getDisplayByLocales = (displayList = [], locales = []) => {
  * format 部分を除外した credential type 名
  */
 const getCredentialBaseType = (credentialType = '') => {
-  return credentialType
+  console.debug('*** getCredentialBaseType ***');
+  console.debug('credentialType:', credentialType);
+
+  const result = credentialType
     .replace(/_jwt_vc_json$/, '')
-    .replace(/_vc\+sd-jwt$/, '');
+    .replace(/_vc\+sd-jwt$/, '')
+    .replace(/_vc_sd_jwt$/, '')
+    .replace(/_sd_jwt$/, '')
+    .replace(/_jwt$/, '');
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -125,11 +182,22 @@ const getCredentialBaseType = (credentialType = '') => {
  * 指定された credential type と一致する場合は true
  */
 const isTargetCredentialType = (credentialType, targetCredentialType) => {
+  console.debug('*** isTargetCredentialType ***');
+  console.debug('credentialType:', credentialType);
+  console.debug('targetCredentialType:', targetCredentialType);
+
   if (!targetCredentialType) {
+    console.debug('targetCredentialType is empty');
+    console.debug('return:', true);
     return true;
   }
 
-  return getCredentialBaseType(credentialType) === targetCredentialType;
+  const baseType = getCredentialBaseType(credentialType);
+  const result = baseType === targetCredentialType;
+
+  console.debug('baseType:', baseType);
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -144,27 +212,37 @@ const isTargetCredentialType = (credentialType, targetCredentialType) => {
  * credential type のベース名を key としてグルーピングした object
  */
 const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
-  return Object.entries(supportedCredentialTypes).reduce(
-    (result, [credentialType, credentialConfig]) => {
+  console.debug('*** groupByCredentialBaseType ***');
+  console.debug('supportedCredentialTypes:', supportedCredentialTypes);
+
+  const result = Object.entries(supportedCredentialTypes).reduce(
+    (groupedResult, [credentialType, credentialConfig]) => {
       const baseType = getCredentialBaseType(credentialType);
 
-      if (!result[baseType]) {
-        result[baseType] = [];
+      console.debug('credentialType:', credentialType);
+      console.debug('baseType:', baseType);
+      console.debug('credentialConfig:', credentialConfig);
+
+      if (!groupedResult[baseType]) {
+        groupedResult[baseType] = [];
       }
 
-      result[baseType].push([credentialType, credentialConfig]);
+      groupedResult[baseType].push([credentialType, credentialConfig]);
 
-      return result;
+      return groupedResult;
     },
     {}
   );
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
  * 同じ credential type 内で、共通で使用する display を取得する関数
  *
  * 同じ credential type で format が異なる場合でも、
- * credential_metadata.display は最終的に同じ値にする
+ * credential_metadata.display は最終的に同じ値にする。
  *
  * 仕様：
  * 1. locales の優先順位に従って検索する
@@ -183,17 +261,33 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
  * 取得できない場合は null を返す
  */
 const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
+  console.debug('*** getSharedCredentialDisplay ***');
+  console.debug('credentialEntries:', credentialEntries);
+  console.debug('locales:', locales);
+
   for (const locale of locales) {
-    for (const [, credentialConfig] of credentialEntries) {
+    console.debug('checking locale:', locale);
+
+    for (const [credentialType, credentialConfig] of credentialEntries) {
       const credentialMetadata = credentialConfig.credential_metadata || {};
+
+      console.debug('credentialType:', credentialType);
+      console.debug('credentialMetadata:', credentialMetadata);
+      console.debug('credentialMetadata.display:', credentialMetadata.display);
+
       const display = getDisplayByLocales(credentialMetadata.display, [locale]);
 
+      console.debug('display:', display);
+
       if (display) {
+        console.debug('return:', display);
         return display;
       }
     }
   }
 
+  console.debug('no shared credential display');
+  console.debug('return:', null);
   return null;
 };
 
@@ -201,15 +295,9 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
  * claim 情報の display を locale 判定後の display に変換する関数
  *
  * 注意：
- * claims は format ごとに保持する
+ * claims は format ごとに保持する。
  * 同じ credential type で format が異なる場合でも、
- * 別 format 側の claims は参照・補完しない
- *
- * 仕様：
- * 1. 現在の claim.display のみを対象にする
- * 2. locales の優先順位に従って display.locale を検索する
- * 3. 一致する display が見つかった場合、その display を返す
- * 4. 一致する display がない場合は null を設定する
+ * 別 format 側の claims は参照・補完しない。
  *
  * @param {object} claim
  * credential_metadata.claims 内の claim object
@@ -222,18 +310,27 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
  * 一致する display がない場合、display は null になる
  */
 const localizeClaim = (claim = {}, locales = []) => {
-  return {
+  console.debug('*** localizeClaim ***');
+  console.debug('claim:', claim);
+  console.debug('locales:', locales);
+
+  const display = getDisplayByLocales(claim.display, locales);
+
+  const result = {
     ...claim,
-    display: getDisplayByLocales(claim.display, locales),
+    display,
   };
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
  * claims 配列全体の display を変換する関数
  *
  * 注意：
- * claims は現在の credential format に所属するもののみを使用する
- * 別 format 側の claims は参照しない
+ * claims は現在の credential format に所属するもののみを使用する。
+ * 別 format 側の claims は参照しない。
  *
  * @param {Array<object>} claims
  * credential_metadata.claims 配列
@@ -246,11 +343,20 @@ const localizeClaim = (claim = {}, locales = []) => {
  * claims が配列ではない場合は空配列を返す
  */
 const localizeClaims = (claims = [], locales = []) => {
+  console.debug('*** localizeClaims ***');
+  console.debug('claims:', claims);
+  console.debug('locales:', locales);
+
   if (!Array.isArray(claims)) {
+    console.debug('claims is not array');
+    console.debug('return:', []);
     return [];
   }
 
-  return claims.map((claim) => localizeClaim(claim, locales));
+  const result = claims.map((claim) => localizeClaim(claim, locales));
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -283,7 +389,12 @@ const localizeCredentialMetadata = (
   locales = [],
   sharedCredentialDisplay = null
 ) => {
-  return {
+  console.debug('*** localizeCredentialMetadata ***');
+  console.debug('credentialMetadata:', credentialMetadata);
+  console.debug('locales:', locales);
+  console.debug('sharedCredentialDisplay:', sharedCredentialDisplay);
+
+  const result = {
     ...credentialMetadata,
 
     // credential 全体の display は、同じ credential type 内で共通の値を使用する
@@ -292,16 +403,19 @@ const localizeCredentialMetadata = (
     // claims は format ごとに保持し、現在の claims の display のみ locale 判定する
     claims: localizeClaims(credentialMetadata.claims, locales),
   };
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
  * 同じ credential type グループ内の各 credential config を変換する関数
  *
  * format が異なる場合でも、同じ credential type であれば、
- * credential_metadata.display は常に同じ値になるようにする
+ * credential_metadata.display は常に同じ値になるようにする。
  *
  * 一方で、claims は各 format に所属する定義をそのまま使用し、
- * 別 format 側の claims は参照しない
+ * 別 format 側の claims は参照しない。
  *
  * @param {Array<Array>} credentialEntries
  * 同じ credential type に属する credential config の配列
@@ -313,15 +427,25 @@ const localizeCredentialMetadata = (
  * display が変換された credential config object
  */
 const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
+  console.debug('*** localizeCredentialGroup ***');
+  console.debug('credentialEntries:', credentialEntries);
+  console.debug('locales:', locales);
+
   const sharedCredentialDisplay = getSharedCredentialDisplay(
     credentialEntries,
     locales
   );
 
-  return credentialEntries.reduce((result, [credentialType, credentialConfig]) => {
+  console.debug('sharedCredentialDisplay:', sharedCredentialDisplay);
+
+  const result = credentialEntries.reduce((groupResult, [credentialType, credentialConfig]) => {
     const credentialMetadata = credentialConfig.credential_metadata || {};
 
-    result[credentialType] = {
+    console.debug('credentialType:', credentialType);
+    console.debug('credentialConfig:', credentialConfig);
+    console.debug('credentialMetadata:', credentialMetadata);
+
+    groupResult[credentialType] = {
       ...credentialConfig,
       credential_metadata: localizeCredentialMetadata(
         credentialMetadata,
@@ -330,8 +454,11 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
       ),
     };
 
-    return result;
+    return groupResult;
   }, {});
+
+  console.debug('return:', result);
+  return result;
 };
 
 /**
@@ -374,25 +501,46 @@ export const localizeSupportedCredentialTypes = (
   supportedCredentialTypes = {},
   targetCredentialType = ''
 ) => {
+  console.debug('*** localizeSupportedCredentialTypes ***');
+  console.debug('supportedCredentialTypes:', supportedCredentialTypes);
+  console.debug('targetCredentialType:', targetCredentialType);
+
   const browserLocales = getBrowserLocales();
 
+  console.debug('browserLocales:', browserLocales);
+
   const filteredCredentialTypes = Object.entries(supportedCredentialTypes).reduce(
-    (result, [credentialType, credentialConfig]) => {
-      if (isTargetCredentialType(credentialType, targetCredentialType)) {
-        result[credentialType] = credentialConfig;
+    (filteredResult, [credentialType, credentialConfig]) => {
+      const isTarget = isTargetCredentialType(credentialType, targetCredentialType);
+
+      console.debug('credentialType:', credentialType);
+      console.debug('isTarget:', isTarget);
+
+      if (isTarget) {
+        filteredResult[credentialType] = credentialConfig;
       }
 
-      return result;
+      return filteredResult;
     },
     {}
   );
 
+  console.debug('filteredCredentialTypes:', filteredCredentialTypes);
+
   const groupedCredentialTypes = groupByCredentialBaseType(filteredCredentialTypes);
 
-  return Object.values(groupedCredentialTypes).reduce((result, credentialEntries) => {
-    return {
-      ...result,
-      ...localizeCredentialGroup(credentialEntries, browserLocales),
-    };
-  }, {});
+  console.debug('groupedCredentialTypes:', groupedCredentialTypes);
+
+  const result = Object.values(groupedCredentialTypes).reduce(
+    (localizedResult, credentialEntries) => {
+      return {
+        ...localizedResult,
+        ...localizeCredentialGroup(credentialEntries, browserLocales),
+      };
+    },
+    {}
+  );
+
+  console.debug('return:', result);
+  return result;
 };
