@@ -1,10 +1,18 @@
 /**
+ * credentialDisplayUtils.js
+ */
+
+/**
+ * 処理対象
+ */
+export const LOCALIZE_PROCESS_TARGET = {
+  ALL: 'all',
+  DISPLAY: 'display',
+  CLAIMS: 'claims',
+};
+
+/**
  * locale を正規化する関数
- *
- * 例：
- *   ja-JP → ja
- *   en-US → en
- *   zh-CN → zh
  *
  * @param {string} locale
  * 比較対象の locale 文字列
@@ -18,13 +26,13 @@ const normalizeLocale = (locale) => {
   console.debug('locale:', locale);
 
   if (!locale || typeof locale !== 'string') {
-    console.debug('result:', '');
+    console.debug('return:', '');
     return '';
   }
 
   const result = locale.toLowerCase().split('-')[0];
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
@@ -42,7 +50,7 @@ const normalizeLocales = (locales = []) => {
   console.debug('locales:', locales);
 
   if (!Array.isArray(locales)) {
-    console.debug('result:', []);
+    console.debug('return:', []);
     return [];
   }
 
@@ -60,7 +68,7 @@ const normalizeLocales = (locales = []) => {
     result.push(normalizedLocale);
   }
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
@@ -76,7 +84,7 @@ const getBrowserLocales = () => {
 
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     console.debug('browser environment is not available');
-    console.debug('result:', []);
+    console.debug('return:', []);
     return [];
   }
 
@@ -84,15 +92,12 @@ const getBrowserLocales = () => {
 
   const result = normalizeLocales(navigator.languages || []);
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
 /**
  * display を配列形式に正規化する関数
- *
- * display は通常配列だが、処理後に object になる場合があるため、
- * 配列・object の両方を扱えるようにする。
  *
  * @param {Array<object>|object|null|undefined} display
  * metadata の display
@@ -105,29 +110,29 @@ const normalizeDisplayList = (display) => {
   console.debug('display:', display);
 
   if (Array.isArray(display)) {
-    console.debug('result:', display);
+    console.debug('return:', display);
     return display;
   }
 
   if (display && typeof display === 'object') {
     const result = [display];
 
-    console.debug('result:', result);
+    console.debug('return:', result);
     return result;
   }
 
-  console.debug('result:', []);
+  console.debug('return:', []);
   return [];
 };
 
 /**
- * display 配列から、指定された locale 優先順位に一致する display を取得する共通関数
+ * display 配列から、指定された locale 優先順位に一致する display を配列で取得する共通関数
  *
  * 仕様：
  * 1. locales の優先順位に従って、先頭から順番に display.locale を検索する
  * 2. 第一優先順位の locale が一致しない場合は、次の優先順位の locale を検索する
- * 3. 一致する display が見つかった時点で、その display を返す
- * 4. すべての locale が一致しない場合は null を返す
+ * 3. 一致する display が見つかった時点で、その display を配列で返す
+ * 4. すべての locale が一致しない場合は空配列を返す
  *
  * @param {Array<object>|object|null|undefined} displayList
  * metadata の display 配列または display object
@@ -135,12 +140,12 @@ const normalizeDisplayList = (display) => {
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
- * @returns {object|null}
- * locale に一致した display オブジェクト
- * 一致するものがない場合は null を返す
+ * @returns {Array<object>}
+ * locale に一致した display オブジェクトの配列
+ * 一致するものがない場合は空配列を返す
  */
-const getDisplayByLocales = (displayList = [], locales = []) => {
-  console.debug('*** getDisplayByLocales ***');
+const getDisplayListByLocales = (displayList = [], locales = []) => {
+  console.debug('*** getDisplayListByLocales ***');
   console.debug('displayList:', displayList);
   console.debug('locales:', locales);
 
@@ -148,14 +153,14 @@ const getDisplayByLocales = (displayList = [], locales = []) => {
 
   if (displays.length === 0) {
     console.debug('displays is empty');
-    console.debug('result:', null);
-    return null;
+    console.debug('return:', []);
+    return [];
   }
 
   if (!Array.isArray(locales) || locales.length === 0) {
     console.debug('locales is empty or not array');
-    console.debug('result:', null);
-    return null;
+    console.debug('return:', []);
+    return [];
   }
 
   for (const locale of locales) {
@@ -169,23 +174,20 @@ const getDisplayByLocales = (displayList = [], locales = []) => {
       console.debug('isMatched:', isMatched);
 
       if (isMatched) {
-        console.debug('result:', display);
-        return display;
+        const result = [display];
+
+        console.debug('return:', result);
+        return result;
       }
     }
   }
 
-  console.debug('result:', null);
-  return null;
+  console.debug('return:', []);
+  return [];
 };
 
 /**
  * credential type のベース名を取得する関数
- *
- * 例：
- *   Awards_jwt_vc_json → Awards
- *   Awards_vc+sd-jwt  → Awards
- *   Awards_vc_sd_jwt  → Awards
  *
  * @param {string} credentialType
  * supportedCredentialTypes の key
@@ -198,25 +200,22 @@ const getCredentialBaseType = (credentialType = '') => {
   console.debug('credentialType:', credentialType);
 
   if (!credentialType || typeof credentialType !== 'string') {
-    console.debug('result:', '');
+    console.debug('return:', '');
     return '';
   }
 
   const result = credentialType
     .replace(/_jwt_vc_json$/, '')
     .replace(/_vc\+sd-jwt$/, '')
-    .replace(/_vc_sd_jwt$/, '')
-    .replace(/_sd_jwt$/, '')
-    .replace(/_jwt$/, '');
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
 /**
  * 指定された credential type と一致するか判定する関数
  *
- * targetCredentialType が指定されていない場合は、すべて true とする。
+ * targetCredentialType が指定されていない場合は、すべて true とする
  *
  * @param {string} credentialType
  * 判定対象の credential type
@@ -233,7 +232,7 @@ const isTargetCredentialType = (credentialType, targetCredentialType) => {
   console.debug('targetCredentialType:', targetCredentialType);
 
   if (!targetCredentialType) {
-    console.debug('result:', true);
+    console.debug('return:', true);
     return true;
   }
 
@@ -241,14 +240,14 @@ const isTargetCredentialType = (credentialType, targetCredentialType) => {
   const result = baseType === targetCredentialType;
 
   console.debug('baseType:', baseType);
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
 /**
  * credential type ごとにグルーピングする関数
  *
- * 同じ credential type で format だけが異なるものを同じグループにまとめる。
+ * 同じ credential type で format だけが異なるものを同じグループにまとめる
  *
  * @param {object} supportedCredentialTypes
  * metadata API から取得した supportedCredentialTypes
@@ -263,7 +262,7 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
   const result = {};
 
   for (const [credentialType, credentialConfig] of Object.entries(
-    supportedCredentialTypes
+    supportedCredentialTypes || {}
   )) {
     const baseType = getCredentialBaseType(credentialType);
 
@@ -278,7 +277,7 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
     result[baseType].push([credentialType, credentialConfig]);
   }
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
@@ -291,8 +290,8 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
  * 仕様：
  * 1. locales の優先順位に従って検索する
  * 2. 同一 credential type 内の各 format の credential_metadata.display を確認する
- * 3. いずれかの format で一致する display が見つかった場合、その display を返す
- * 4. すべての format で見つからない場合は null を返す
+ * 3. いずれかの format で一致する display が見つかった場合、その display を配列で返す
+ * 4. すべての format で見つからない場合は空配列を返す
  *
  * @param {Array<Array>} credentialEntries
  * 同じ credential type に属する credential config の配列
@@ -300,9 +299,9 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
- * @returns {object|null}
- * 同じ credential type 内で共通使用する display
- * 取得できない場合は null を返す
+ * @returns {Array<object>}
+ * 同じ credential type 内で共通使用する display 配列
+ * 取得できない場合は空配列を返す
  */
 const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
   console.debug('*** getSharedCredentialDisplay ***');
@@ -311,14 +310,14 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
 
   if (!Array.isArray(credentialEntries) || credentialEntries.length === 0) {
     console.debug('credentialEntries is empty or not array');
-    console.debug('result:', null);
-    return null;
+    console.debug('return:', []);
+    return [];
   }
 
   if (!Array.isArray(locales) || locales.length === 0) {
     console.debug('locales is empty or not array');
-    console.debug('result:', null);
-    return null;
+    console.debug('return:', []);
+    return [];
   }
 
   for (const locale of locales) {
@@ -329,19 +328,19 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
       console.debug('credentialType:', credentialType);
       console.debug('credentialMetadata.display:', credentialMetadata.display);
 
-      const display = getDisplayByLocales(credentialMetadata.display, [locale]);
+      const display = getDisplayListByLocales(credentialMetadata.display, [locale]);
 
       console.debug('display:', display);
 
-      if (display) {
-        console.debug('result:', display);
+      if (display.length > 0) {
+        console.debug('return:', display);
         return display;
       }
     }
   }
 
-  console.debug('result:', null);
-  return null;
+  console.debug('return:', []);
+  return [];
 };
 
 /**
@@ -352,12 +351,6 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
  * 同じ credential type で format が異なる場合でも、
  * 別 format 側の claims は参照・補完しない。
  *
- * 仕様：
- * 1. 現在の claim.display のみを対象にする
- * 2. locales の優先順位に従って display.locale を検索する
- * 3. 一致する display が見つかった場合、その display を返す
- * 4. 一致する display がない場合は null を設定する
- *
  * @param {object} claim
  * credential_metadata.claims 内の claim object
  *
@@ -365,8 +358,8 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
  * 優先順位付きの locale 配列
  *
  * @returns {object}
- * display が locale 判定後の display に置き換えられた claim object
- * 一致する display がない場合、display は null になる
+ * display が locale 判定後の display 配列に置き換えられた claim object
+ * 一致する display がない場合、display は空配列になる
  */
 const localizeClaim = (claim = {}, locales = []) => {
   console.debug('*** localizeClaim ***');
@@ -375,10 +368,10 @@ const localizeClaim = (claim = {}, locales = []) => {
 
   const result = {
     ...claim,
-    display: getDisplayByLocales(claim?.display, locales),
+    display: getDisplayListByLocales(claim?.display, locales),
   };
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
@@ -406,7 +399,7 @@ const localizeClaims = (claims = [], locales = []) => {
 
   if (!Array.isArray(claims)) {
     console.debug('claims is not array');
-    console.debug('result:', []);
+    console.debug('return:', []);
     return [];
   }
 
@@ -416,7 +409,51 @@ const localizeClaims = (claims = [], locales = []) => {
     result.push(localizeClaim(claim, locales));
   }
 
-  console.debug('result:', result);
+  console.debug('return:', result);
+  return result;
+};
+
+/**
+ * 処理対象が display を含むか判定する関数
+ *
+ * @param {string} processTarget
+ * 処理対象
+ *
+ * @returns {boolean}
+ * display を処理する場合は true
+ */
+const shouldProcessDisplay = (processTarget = LOCALIZE_PROCESS_TARGET.ALL) => {
+  console.debug('*** shouldProcessDisplay ***');
+  console.debug('processTarget:', processTarget);
+
+  const result =
+    !processTarget ||
+    processTarget === LOCALIZE_PROCESS_TARGET.ALL ||
+    processTarget === LOCALIZE_PROCESS_TARGET.DISPLAY;
+
+  console.debug('return:', result);
+  return result;
+};
+
+/**
+ * 処理対象が claims を含むか判定する関数
+ *
+ * @param {string} processTarget
+ * 処理対象
+ *
+ * @returns {boolean}
+ * claims を処理する場合は true
+ */
+const shouldProcessClaims = (processTarget = LOCALIZE_PROCESS_TARGET.ALL) => {
+  console.debug('*** shouldProcessClaims ***');
+  console.debug('processTarget:', processTarget);
+
+  const result =
+    !processTarget ||
+    processTarget === LOCALIZE_PROCESS_TARGET.ALL ||
+    processTarget === LOCALIZE_PROCESS_TARGET.CLAIMS;
+
+  console.debug('return:', result);
   return result;
 };
 
@@ -426,12 +463,13 @@ const localizeClaims = (claims = [], locales = []) => {
  * credential_metadata.display:
  * - 同じ credential type 内で共通の display を使用する
  * - format が異なる場合でも、同じ credential type であれば display は同じ値にする
+ * - 処理後も display は配列型を維持する
  *
  * claims[].display:
  * - claims は format ごとの定義をそのまま使用する
  * - 別 format 側の claims は参照しない
  * - 現在の format に所属する claims[].display の中から locale に一致する display を取得する
- * - 一致する display がない場合は null を設定する
+ * - 処理後も display は配列型を維持する
  *
  * @param {object} credentialMetadata
  * credential_metadata object
@@ -439,8 +477,14 @@ const localizeClaims = (claims = [], locales = []) => {
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
- * @param {object|null} sharedCredentialDisplay
- * 同じ credential type 内で共通使用する credential display
+ * @param {Array<object>} sharedCredentialDisplay
+ * 同じ credential type 内で共通使用する credential display 配列
+ *
+ * @param {string} processTarget
+ * 処理対象
+ * all: display と claims の両方を処理する
+ * display: credential_metadata.display のみ処理する
+ * claims: claims[].display のみ処理する
  *
  * @returns {object}
  * display と claims[].display が変換された credential_metadata
@@ -448,24 +492,32 @@ const localizeClaims = (claims = [], locales = []) => {
 const localizeCredentialMetadata = (
   credentialMetadata = {},
   locales = [],
-  sharedCredentialDisplay = null
+  sharedCredentialDisplay = [],
+  processTarget = LOCALIZE_PROCESS_TARGET.ALL
 ) => {
   console.debug('*** localizeCredentialMetadata ***');
   console.debug('credentialMetadata:', credentialMetadata);
   console.debug('locales:', locales);
   console.debug('sharedCredentialDisplay:', sharedCredentialDisplay);
+  console.debug('processTarget:', processTarget);
 
   const result = {
     ...credentialMetadata,
-
-    // credential 全体の display は、同じ credential type 内で共通の値を使用する
-    display: sharedCredentialDisplay,
-
-    // claims は format ごとに保持し、現在の claims の display のみ locale 判定する
-    claims: localizeClaims(credentialMetadata?.claims, locales),
   };
 
-  console.debug('result:', result);
+  if (shouldProcessDisplay(processTarget)) {
+    // credential 全体の display は、同じ credential type 内で共通の値を使用する
+    // 処理後も配列型を維持する
+    result.display = sharedCredentialDisplay;
+  }
+
+  if (shouldProcessClaims(processTarget)) {
+    // claims は format ごとに保持し、現在の claims の display のみ locale 判定する
+    // 処理後も display は配列型を維持する
+    result.claims = localizeClaims(credentialMetadata?.claims, locales);
+  }
+
+  console.debug('return:', result);
   return result;
 };
 
@@ -484,18 +536,25 @@ const localizeCredentialMetadata = (
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
+ * @param {string} processTarget
+ * 処理対象
+ *
  * @returns {object}
  * display が変換された credential config object
  */
-const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
+const localizeCredentialGroup = (
+  credentialEntries = [],
+  locales = [],
+  processTarget = LOCALIZE_PROCESS_TARGET.ALL
+) => {
   console.debug('*** localizeCredentialGroup ***');
   console.debug('credentialEntries:', credentialEntries);
   console.debug('locales:', locales);
+  console.debug('processTarget:', processTarget);
 
-  const sharedCredentialDisplay = getSharedCredentialDisplay(
-    credentialEntries,
-    locales
-  );
+  const sharedCredentialDisplay = shouldProcessDisplay(processTarget)
+    ? getSharedCredentialDisplay(credentialEntries, locales)
+    : [];
 
   console.debug('sharedCredentialDisplay:', sharedCredentialDisplay);
 
@@ -513,12 +572,13 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
       credential_metadata: localizeCredentialMetadata(
         credentialMetadata,
         locales,
-        sharedCredentialDisplay
+        sharedCredentialDisplay,
+        processTarget
       ),
     };
   }
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
 
@@ -532,21 +592,28 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
  * 2. targetCredentialType が指定されていない場合
  *    - supportedCredentialTypes 全体を返す
  *
- * 3. display の locale 判定
+ * 3. processTarget が指定されている場合
+ *    - display: credential_metadata.display のみ処理する
+ *    - claims: claims[].display のみ処理する
+ *    - all または未指定: display と claims の両方を処理する
+ *
+ * 4. display の locale 判定
  *    - browserLocales の第一優先順位から順番に display.locale と一致判定する
  *    - 第一優先順位で一致しない場合は、次の優先順位を確認する
- *    - すべて一致しない場合は null を返す
+ *    - すべて一致しない場合は空配列を返す
  *
- * 4. credential_metadata.display の処理
+ * 5. credential_metadata.display の処理
  *    - 同じ credential type で format が異なる場合でも、display は常に同じ値にする
  *    - 同一 type 内のいずれかの format で display が取得できる場合、その display を共通で使用する
- *    - 同一 type 内のどの format からも display が取得できない場合は null を設定する
+ *    - 同一 type 内のどの format からも display が取得できない場合は空配列を設定する
+ *    - 処理後も display は配列型を維持する
  *
- * 5. claims[].display の処理
+ * 6. claims[].display の処理
  *    - claims は format ごとの定義をそのまま使用する
  *    - 別 format 側の claims は参照しない
  *    - 現在の format に所属する claims[].display のみ locale 判定する
- *    - 一致する display がない場合は null を設定する
+ *    - 一致する display がない場合は空配列を設定する
+ *    - 処理後も display は配列型を維持する
  *
  * @param {object} supportedCredentialTypes
  * metadata API から取得した supportedCredentialTypes
@@ -555,16 +622,24 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
  * 取得対象の credential type
  * 未指定の場合はすべての credential type を返す
  *
+ * @param {string} processTarget
+ * 処理対象
+ * all: display と claims の両方を処理する
+ * display: credential_metadata.display のみ処理する
+ * claims: claims[].display のみ処理する
+ *
  * @returns {object}
- * display が locale 判定後の値に置き換えられた supportedCredentialTypes
+ * display が locale 判定後の配列に置き換えられた supportedCredentialTypes
  */
 export const localizeSupportedCredentialTypes = (
   supportedCredentialTypes = {},
-  targetCredentialType = ''
+  targetCredentialType = '',
+  processTarget = LOCALIZE_PROCESS_TARGET.ALL
 ) => {
   console.debug('*** localizeSupportedCredentialTypes ***');
   console.debug('supportedCredentialTypes:', supportedCredentialTypes);
   console.debug('targetCredentialType:', targetCredentialType);
+  console.debug('processTarget:', processTarget);
 
   const browserLocales = getBrowserLocales();
 
@@ -596,12 +671,13 @@ export const localizeSupportedCredentialTypes = (
   for (const credentialEntries of Object.values(groupedCredentialTypes)) {
     const localizedCredentialGroup = localizeCredentialGroup(
       credentialEntries,
-      browserLocales
+      browserLocales,
+      processTarget
     );
 
     Object.assign(result, localizedCredentialGroup);
   }
 
-  console.debug('result:', result);
+  console.debug('return:', result);
   return result;
 };
