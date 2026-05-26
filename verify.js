@@ -164,11 +164,11 @@ const groupByCredentialBaseType = (supportedCredentialTypes = {}) => {
  * 同じ credential type 内で、共通で使用する display を取得する関数
  *
  * 同じ credential type で format が異なる場合でも、
- * 最終的に同じ display を使用するための共通 display を取得する
+ * credential_metadata.display は最終的に同じ値にする
  *
  * 仕様：
  * 1. locales の優先順位に従って検索する
- * 2. 同一 credential type 内の各 format の display を確認する
+ * 2. 同一 credential type 内の各 format の credential_metadata.display を確認する
  * 3. いずれかの format で一致する display が見つかった場合、その display を返す
  * 4. すべての format で見つからない場合は null を返す
  *
@@ -198,43 +198,18 @@ const getSharedCredentialDisplay = (credentialEntries = [], locales = []) => {
 };
 
 /**
- * 同じ credential type 内で、同じ path の claim に共通で使用する display を取得する関数
- *
- * @param {Array<Array>} credentialEntries
- * 同じ credential type に属する credential config の配列
- *
- * @param {string[]} targetPath
- * 対象 claim の path
- *
- * @param {string[]} locales
- * 優先順位付きの locale 配列
- *
- * @returns {object|null}
- * 同じ path の claim に共通使用する display
- * 取得できない場合は null を返す
- */
-const getSharedClaimDisplay = (credentialEntries = [], targetPath = [], locales = []) => {
-  for (const locale of locales) {
-    for (const [, credentialConfig] of credentialEntries) {
-      const claims = credentialConfig.credential_metadata?.claims || [];
-
-      const matchedClaim = claims.find((claim) => {
-        return JSON.stringify(claim.path) === JSON.stringify(targetPath);
-      });
-
-      const display = getDisplayByLocales(matchedClaim?.display, [locale]);
-
-      if (display) {
-        return display;
-      }
-    }
-  }
-
-  return null;
-};
-
-/**
  * claim 情報の display を locale 判定後の display に変換する関数
+ *
+ * 注意：
+ * claims は format ごとに保持する
+ * 同じ credential type で format が異なる場合でも、
+ * 別 format 側の claims は参照・補完しない
+ *
+ * 仕様：
+ * 1. 現在の claim.display のみを対象にする
+ * 2. locales の優先順位に従って display.locale を検索する
+ * 3. 一致する display が見つかった場合、その display を返す
+ * 4. 一致する display がない場合は null を設定する
  *
  * @param {object} claim
  * credential_metadata.claims 内の claim object
@@ -242,26 +217,23 @@ const getSharedClaimDisplay = (credentialEntries = [], targetPath = [], locales 
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
- * @param {Array<Array>} credentialEntries
- * 同じ credential type に属する credential config の配列
- *
  * @returns {object}
  * display が locale 判定後の display に置き換えられた claim object
  * 一致する display がない場合、display は null になる
  */
-const localizeClaim = (claim = {}, locales = [], credentialEntries = []) => {
-  const display =
-    getDisplayByLocales(claim.display, locales) ||
-    getSharedClaimDisplay(credentialEntries, claim.path, locales);
-
+const localizeClaim = (claim = {}, locales = []) => {
   return {
     ...claim,
-    display,
+    display: getDisplayByLocales(claim.display, locales),
   };
 };
 
 /**
  * claims 配列全体の display を変換する関数
+ *
+ * 注意：
+ * claims は現在の credential format に所属するもののみを使用する
+ * 別 format 側の claims は参照しない
  *
  * @param {Array<object>} claims
  * credential_metadata.claims 配列
@@ -269,37 +241,36 @@ const localizeClaim = (claim = {}, locales = [], credentialEntries = []) => {
  * @param {string[]} locales
  * 優先順位付きの locale 配列
  *
- * @param {Array<Array>} credentialEntries
- * 同じ credential type に属する credential config の配列
- *
  * @returns {Array<object>}
  * 各 claim の display が変換された claims 配列
  * claims が配列ではない場合は空配列を返す
  */
-const localizeClaims = (claims = [], locales = [], credentialEntries = []) => {
+const localizeClaims = (claims = [], locales = []) => {
   if (!Array.isArray(claims)) {
     return [];
   }
 
-  return claims.map((claim) => localizeClaim(claim, locales, credentialEntries));
+  return claims.map((claim) => localizeClaim(claim, locales));
 };
 
 /**
  * credential_metadata の display と claims[].display を変換する関数
  *
+ * credential_metadata.display:
+ * - 同じ credential type 内で共通の display を使用する
+ * - format が異なる場合でも、同じ credential type であれば display は同じ値にする
+ *
  * claims[].display:
- * - 自身の display を locale 優先順位に従って取得する
- * - 取得できない場合、同じ credential type の別 format 側の同じ path の claim.display を確認する
- * - それでも取得できない場合は null を設定する
+ * - claims は format ごとの定義をそのまま使用する
+ * - 別 format 側の claims は参照しない
+ * - 現在の format に所属する claims[].display の中から locale に一致する display を取得する
+ * - 一致する display がない場合は null を設定する
  *
  * @param {object} credentialMetadata
  * credential_metadata object
  *
  * @param {string[]} locales
  * 優先順位付きの locale 配列
- *
- * @param {Array<Array>} credentialEntries
- * 同じ credential type に属する credential config の配列
  *
  * @param {object|null} sharedCredentialDisplay
  * 同じ credential type 内で共通使用する credential display
@@ -310,7 +281,6 @@ const localizeClaims = (claims = [], locales = [], credentialEntries = []) => {
 const localizeCredentialMetadata = (
   credentialMetadata = {},
   locales = [],
-  credentialEntries = [],
   sharedCredentialDisplay = null
 ) => {
   return {
@@ -319,13 +289,19 @@ const localizeCredentialMetadata = (
     // credential 全体の display は、同じ credential type 内で共通の値を使用する
     display: sharedCredentialDisplay,
 
-    // 各 claim の display を locale 判定後の display に変換する
-    claims: localizeClaims(credentialMetadata.claims, locales, credentialEntries),
+    // claims は format ごとに保持し、現在の claims の display のみ locale 判定する
+    claims: localizeClaims(credentialMetadata.claims, locales),
   };
 };
 
 /**
  * 同じ credential type グループ内の各 credential config を変換する関数
+ *
+ * format が異なる場合でも、同じ credential type であれば、
+ * credential_metadata.display は常に同じ値になるようにする
+ *
+ * 一方で、claims は各 format に所属する定義をそのまま使用し、
+ * 別 format 側の claims は参照しない
  *
  * @param {Array<Array>} credentialEntries
  * 同じ credential type に属する credential config の配列
@@ -350,7 +326,6 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
       credential_metadata: localizeCredentialMetadata(
         credentialMetadata,
         locales,
-        credentialEntries,
         sharedCredentialDisplay
       ),
     };
@@ -369,15 +344,21 @@ const localizeCredentialGroup = (credentialEntries = [], locales = []) => {
  * 2. targetCredentialType が指定されていない場合
  *    - supportedCredentialTypes 全体を返す
  *
- * 3. display の処理
+ * 3. display の locale 判定
  *    - browserLocales の第一優先順位から順番に display.locale と一致判定する
  *    - 第一優先順位で一致しない場合は、次の優先順位を確認する
  *    - すべて一致しない場合は null を返す
  *
- * 4. 同じ credential type で format が異なる場合
- *    - credential_metadata.display は、同じ credential type 内で常に同じ値にする
+ * 4. credential_metadata.display の処理
+ *    - 同じ credential type で format が異なる場合でも、display は常に同じ値にする
  *    - 同一 type 内のいずれかの format で display が取得できる場合、その display を共通で使用する
  *    - 同一 type 内のどの format からも display が取得できない場合は null を設定する
+ *
+ * 5. claims[].display の処理
+ *    - claims は format ごとの定義をそのまま使用する
+ *    - 別 format 側の claims は参照しない
+ *    - 現在の format に所属する claims[].display のみ locale 判定する
+ *    - 一致する display がない場合は null を設定する
  *
  * @param {object} supportedCredentialTypes
  * metadata API から取得した supportedCredentialTypes
