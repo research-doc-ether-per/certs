@@ -1,28 +1,33 @@
-
 let pdData = {}
 
 switch (format) {
   case 'jwt_vc_json': // JWT-VC の場合
     pdData = {
       vc_policies: [...common_policies, ...jwt_vc_policies],
+      // 簡易指定は消去し、input_descriptor 形式のみを配置
       request_credentials: [
-        { 
-          format: format, 
-          type: type,
-          // 完全一致（const）の条件を追加
-          constraints: {
-            fields: [
-              {
-                path: ["$.vc.type"],
-                filter: {
-                  type: "array",
-                  contains: {
-                    type: "string",
-                    const: type // 指定されたタイプ名と完全一致
+        {
+          input_descriptor: {
+            id: type, // 識別子としてタイプ名を設定
+            format: {
+              jwt_vc_json: {
+                alg: ["EdDSA"] // 必要に応じて鍵アルゴリズムを指定
+              }
+            },
+            constraints: {
+              fields: [
+                {
+                  path: ["$.vc.type"],
+                  filter: {
+                    type: "array",
+                    contains: {
+                      type: "string",
+                      const: type // const で完全一致を強制
+                    }
                   }
                 }
-              }
-            ]
+              ]
+            }
           }
         }
       ],
@@ -34,21 +39,25 @@ switch (format) {
     pdData = {
       vc_policies: [...common_policies, ...sd_jwt_vc_policies],
       vp_policies: sd_jwt_vp_policies,
+      // 簡易指定は消去し、input_descriptor 形式のみを配置
       request_credentials: [
         {
-          format: format,
-          vct: vctValue,
-          // 完全一致（const）の条件を追加
-          constraints: {
-            fields: [
-              {
-                path: ["$.vct"],
-                filter: {
-                  type: "string",
-                  const: vctValue // 指定されたVCT文字列と完全一致
+          input_descriptor: {
+            id: vctValue, // 識別子として VCT の値を設定
+            format: {
+              "vc+sd-jwt": {}
+            },
+            constraints: {
+              fields: [
+                {
+                  path: ["$.vct"],
+                  filter: {
+                    type: "string",
+                    const: vctValue // const で完全一致を強制
+                  }
                 }
-              }
-            ]
+              ]
+            }
           }
         }
       ],
@@ -59,3 +68,5 @@ switch (format) {
     break
 }
 
+// OID4VP 検証セッションを作成
+const presentation_request_url = await createPresentationOffer(pdData)
