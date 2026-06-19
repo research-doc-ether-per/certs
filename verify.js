@@ -1,27 +1,28 @@
 const axios = require('axios');
 const log4js = require('log4js');
 
-// cookie 自动管理（用于 Session 认证模式）
+// Cookie の自動管理（Session 認証モードで必要）
 const axiosInstance = axios.create({
-    withCredentials: true // 允许跨域及自动携带 cookie / session
+    withCredentials: true // クロスドメイン環境やセッション Cookie を自動でやり取りするための設定
 });
 
 // =========================================================================
-// FIXME: 根據環境修改以下參數
+// FIXME: 環境に合わせて以下のパラメータを修正してください
 // =========================================================================
-const FIXME_VM_IP = "192.x.x.x";                
-const FIXME_TEST_EMAIL = "test-user@example.com";       
-const FIXME_TEST_PASSWORD = "Password123!";            
-const FIXME_KEYCLOAK_USERNAME = "Max_Mustermann";      // Keycloak 登录需要 username
-const FIXME_KEYCLOAK_PASSWORD = "password";           
+const FIXME_VM_IP = "192.x.x.x";                // FIXME: 仮想マシンの実際のIPアドレスを設定してください
+const FIXME_TEST_EMAIL = "test-user@example.com";       // FIXME: テスト用のメールアドレス
+const FIXME_TEST_PASSWORD = "Password123!";            // FIXME: テスト用のパスワード
+const FIXME_KEYCLOAK_USERNAME = "Max_Mustermann";      // FIXME: Keycloak ログイン用のユーザー名
+const FIXME_KEYCLOAK_PASSWORD = "password";            // FIXME: Keycloak ログイン用のパスワード
 
 // =========================================================================
 // 設定情報 (Config)
 // =========================================================================
 const config = {
-    walletApiUrl: `http://${FIXME_VM_IP}:2424` 
+    walletApiUrl: `http://${FIXME_VM_IP}:2424` // 直接公開したwallet-apiのポートに接続
 };
 
+// Log4js の初期化設定
 log4js.configure({
     appenders: { console: { type: 'console' } },
     categories: { default: { appenders: ['console'], level: 'info' } }
@@ -56,7 +57,7 @@ async function createUserWallet(type, credentials) {
     logger.info(`ウォレット作成・ログイン処理を開始します。方式: ${type}`);
     
     if (type === "EmailPassword") {
-        // 1. 先尝试注册（新版本 walt.id 注册和登录分开）
+        // 1. まずはユーザー登録（新規登録）を試みる
         try {
             logger.info("ユーザー登録を試みます...");
             await request('POST', '/wallet-api/wallet-api/register', {
@@ -66,17 +67,16 @@ async function createUserWallet(type, credentials) {
             });
             logger.info("新規登録に成功しました");
         } catch (e) {
-            logger.info("登録スキップ（既にユーザーが存在する可能性があります）");
+            logger.info("登録をスキップします（既にユーザーが存在する可能性があります）");
         }
 
-        // 2. 这里的 Email+Password 模式主要是建立 Session，因此通过 user-info 验证会话
-        // 注意：新版 Swagger 中并没有单独的 /auth/login 接口用于 Email，通常注册后会话即建立，或者依靠外部 Session。
+        // 2. Email+Password 認証ではセッションが作成されるため、user-info を呼び出してセッション確立を確認する
         const userInfo = await request('GET', '/wallet-api/auth/user-info');
         logger.info(`Session 認証確認。ユーザーID: ${userInfo}`);
-        return null; // Email 方式走 Session，不需要 Token
+        return null; // Email方式は Cookie (Session) を使用するため Token は不要
 
     } else if (type === "Keycloak") {
-        // Keycloak 注册
+        // 1. Keycloak ユーザー登録
         try {
             logger.info("Keycloak ユーザー登録を試みます...");
             await request('POST', '/wallet-api/wallet-api/create', {
@@ -85,19 +85,19 @@ async function createUserWallet(type, credentials) {
                 password: credentials.password
             });
         } catch (e) {
-            logger.info("Keycloak 登録スキップ（既に存在するか外部管理されています）");
+            logger.info("Keycloak 登録をスキップします（既にユーザーが存在するか外部管理されています）");
         }
 
-        // Keycloak 登录获取状态
+        // 2. Keycloak ログインを実行
         await request('POST', '/wallet-api/wallet-api/login', {
             type: "keycloak",
             username: credentials.username,
             password: credentials.password
         });
 
-        // 获取 Keycloak Access Token
+        // 3. ログイン完了後、Keycloak の Access Token を取得して返す
         const tokenData = await request('GET', '/wallet-api/auth/keycloak/token');
-        return tokenData; // 返回真正的 Access Token 字符串
+        return tokenData; 
     } else {
         throw new Error("未対応の認証方式が指定されました");
     }
@@ -109,19 +109,19 @@ async function createUserWallet(type, credentials) {
 async function runIdentityWorkflow(token, identifierType) {
     logger.info(`アイデンティティ管理フロー開始: ${identifierType}`);
 
-    // 1. 关联钱包列表的取得 (新版必需：通过此接口获取 {wallet} ID)
+    // 1. アカウントに関連付けられたウォレット一覧の取得（最新版では {wallet} ID の指定が必須）
     logger.info("手順1. アカウントに関連付けられたウォレット一覧を取得します");
     const wallets = await request('GET', '/wallet-api/wallet/accounts/wallets', null, token);
     logger.info("ウォレット一覧を取得しました:", JSON.stringify(wallets, null, 2));
     
-    // 取出第一个钱包ID (通常格式为 UUID 或 字符串)
     if (!wallets || wallets.length === 0) {
         throw new Error("利用可能なウォレットが見つかりません");
     }
+    // 最初のウォレットIDを抽出
     const walletId = wallets[0].id || wallets[0]; 
     logger.info(`操作対象のウォレットID: ${walletId}`);
     
-    // 2. 新しいDIDの作成 (路径变更为 /wallet-api/wallet/{wallet}/dids/create/jwk)
+    // 2. 新しいDIDの作成 (パスが /wallet-api/wallet/{wallet}/dids/create/jwk に変更)
     logger.info("手順2. 新しいDIDを作成します (did:jwk メソッドを使用)");
     const newDidRes = await request('POST', `/wallet-api/wallet/${walletId}/dids/create/jwk`, {}, token);
     const createdDid = typeof newDidRes === 'string' ? newDidRes : newDidRes.did;
@@ -158,7 +158,7 @@ async function scenarioEmailPassword() {
             email: FIXME_TEST_EMAIL,
             password: FIXME_TEST_PASSWORD
         });
-        // token 为 null，依靠 axiosInstance 自动带上 session cookie
+        // token は null になりますが、axiosInstance が自動で Session Cookie を送信します
         await runIdentityWorkflow(token, "Email/Password方式");
     } catch (error) {
         logger.error("シナリオ1の実行中にエラーが発生しました");
