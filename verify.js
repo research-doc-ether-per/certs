@@ -1,8 +1,1 @@
-getOpenIdCredentialIssuerMetadata
-validateCredentialSupport
-createJwtCredentialOffer
-createSdJwtCredentialOffer
-createMdocCredentialOffer
-getCredentialOfferDetails
-exchangeAccessToken
-requestCredential
+
