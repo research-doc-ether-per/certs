@@ -1,134 +1,77 @@
-/**
- * 共通の POST リクエストハンドラー
- *
- * @param {Object} apiInstance AxiosなどのAPIインスタンス
- * @param {string} url エンドポイントのURL
- * @param {string|null} accessToken アクセストークン（不要な場合はnull）
- * @param {Object} params リクエストパラメータ
- * @param {Object} extraHeaders 追加のヘッダー情報
- * @param {...any} axiosOptions その他のAxiosオプション
- * @returns {Promise<Object>} APIレスポンス
- */
-const handlePost = async (
-  apiInstance,
-  url,
-  accessToken,
-  params,
-  extraHeaders = {},
-  ...axiosOptions
-) => {
-  logger.debug('*** handlePost start ***')
-
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...extraHeaders,
-    }
-
-    return await apiInstance.post(url, params, { headers, ...axiosOptions })
-  } catch (error) {
-    logAxiosError(error)
-    throw error
-  } finally {
-    logger.debug('*** handlePost end ***')
-  }
-}
+// 先ほど作成したサービス（メソッド群）をインポートします
+const { onboardIaca, onboardDocumentSigner, onboardIssuer } = require('./issuerService');
 
 /**
- * mDL用の IACA（Issuing Authority Certification Authority）証明書を発行する。
- *
- * @param {Object} params リクエストパラメータ
- * @returns {Promise<Object>} 作成された IACA 証明書
+ * Issuer Onboarding Service のデモ実行関数
+ * 3つのオンボーディングAPIをステップ順に呼び出します
  */
-const onboardIaca = async (params) => {
-  logger.debug('*** onboardIaca start ***')
+const runIssuerOnboardingDemo = async () => {
+  logger.debug('*** runIssuerOnboardingDemo start ***');
 
   try {
-    const response = await fetchService.handlePost(
-      fetchService.issuerApi,
-      '/onboard/iso-mdl/iacas',
-      null,
-      params
-    )
+    logger.info('--- Issuer Onboarding Service デモプロセスの開始 ---');
 
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
+    // ------------------------------------------
+    // 1. /onboard/iso-mdl/iacas の呼び出し
+    // ------------------------------------------
+    logger.info('サンプル実行 [1/3]: mDL用の IACA 証明書発行APIを呼び出します');
+    const iacaParams = {
+      keyGenerationRequest: {
+        keyType: 'Ed25519'
+      },
+      onboardRequestDid: {
+        didMethod: 'jwk'
+      }
+    };
+    
+    const iacaResult = await onboardIaca(iacaParams);
+    logger.info('サンプル実行 [1/3]: IACA 証明書の作成が完了しました');
 
-    return result
+
+    // ------------------------------------------
+    // 2. /onboard/iso-mdl/document-signers の呼び出し
+    // ------------------------------------------
+    logger.info('サンプル実行 [2/3]: mDL用の Document Signer 証明書発行APIを呼び出します');
+    const dsParams = {
+      keyGenerationRequest: {
+        keyType: 'Ed25519'
+      }
+    };
+
+    const dsResult = await onboardDocumentSigner(dsParams);
+    logger.info('サンプル実行 [2/3]: Document Signer 証明書の作成が完了しました');
+
+
+    // ------------------------------------------
+    // 3. /onboard/issuer の呼び出し
+    // ------------------------------------------
+    logger.info('サンプル実行 [3/3]: 新しい Issuer のオンボーディングAPIを呼び出します');
+    const issuerParams = {
+      didMethod: 'jwk',
+      keyType: 'Ed25519'
+    };
+
+    const issuerResult = await onboardIssuer(issuerParams);
+    logger.info('サンプル実行 [3/3]: Issuer のオンボーディングが完了しました');
+
+
+    // ------------------------------------------
+    // デモ結果の出力
+    // ------------------------------------------
+    logger.info('--- Issuer Onboarding Service デモプロセスが正常に終了しました ---');
+    logger.debug('デモ実行結果一覧:', JSON.stringify({
+      iacaResult,
+      documentSignerResult: dsResult,
+      issuerResult
+    }, null, 2));
+
   } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
+    logger.error('Issuer Onboarding デモ実行中にエラーが検知されたため、処理を中断しました');
+    logger.error('エラー原因: ', error.message);
   } finally {
-    logger.debug('*** onboardIaca end ***')
+    logger.debug('*** runIssuerOnboardingDemo end ***');
   }
-}
+};
 
-/**
- * mDL用の DS（Document Signer）証明書を発行する。
- *
- * @param {Object} params リクエストパラメータ
- * @returns {Promise<Object>} 作成された DS 証明書
- */
-const onboardDocumentSigner = async (params) => {
-  logger.debug('*** onboardDocumentSigner start ***')
-
-  try {
-    const response = await fetchService.handlePost(
-      fetchService.issuerApi,
-      '/onboard/iso-mdl/document-signers',
-      null,
-      params
-    )
-
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** onboardDocumentSigner end ***')
-  }
-}
-
-/**
- * 新しい Issuer をオンボーディング（登録）する。
- *
- * @param {Object} params リクエストパラメータ
- * @returns {Promise<Object>} オンボーディングされた Issuer の情報
- */
-const onboardIssuer = async (params) => {
-  logger.debug('*** onboardIssuer start ***')
-
-  try {
-    const response = await fetchService.handlePost(
-      fetchService.issuerApi,
-      '/onboard/issuer',
-      null,
-      params
-    )
-
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** onboardIssuer end ***')
-  }
-}
-
-// 外部モジュールから呼び出せるようにエクスポートします
-module.exports = {
-  handlePost,
-  onboardIaca,
-  onboardDocumentSigner,
-  onboardIssuer,
-}
+// デモの実行
+runIssuerOnboardingDemo();
