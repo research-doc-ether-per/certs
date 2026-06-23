@@ -1,5 +1,5 @@
 getOpenIdCredentialIssuerMetadata
-
+validateCredentialSupport
 createJwtCredentialOffer
 createSdJwtCredentialOffer
 createMdocCredentialOffer
