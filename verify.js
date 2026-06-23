@@ -1,135 +1,134 @@
-
-const axios = require('axios');
-
-// walt.id Issuer サービスのベースURL
-// 環境に合わせて適宜変更してください
-const BASE_URL = 'https://issuer.demo.walt.id';
-
 /**
- * 1. mDL用の IACA (Issuing Authority Certification Authority) 証明書を発行します
- * @param {Object} payload - リクエストボディデータ
- * @returns {Promise<Object>} APIからのレスポンスデータ
+ * 共通の POST リクエストハンドラー
+ *
+ * @param {Object} apiInstance AxiosなどのAPIインスタンス
+ * @param {string} url エンドポイントのURL
+ * @param {string|null} accessToken アクセストークン（不要な場合はnull）
+ * @param {Object} params リクエストパラメータ
+ * @param {Object} extraHeaders 追加のヘッダー情報
+ * @param {...any} axiosOptions その他のAxiosオプション
+ * @returns {Promise<Object>} APIレスポンス
  */
-async function onboardIaca(payload) {
-    try {
-        console.log('--- onboardIaca メソッドの実行開始 ---');
-        
-        const url = `${BASE_URL}/onboard/iso-mdl/iacas`;
-        const response = await axios.post(url, payload, {
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        console.log('IACA 証明書の作成処理が正常に完了しました');
-        return response.data;
-    } catch (error) {
-        console.error('onboardIaca メソッドでエラーが発生しました');
-        handleError(error);
-        throw error;
-    }
-}
+const handlePost = async (
+  apiInstance,
+  url,
+  accessToken,
+  params,
+  extraHeaders = {},
+  ...axiosOptions
+) => {
+  logger.debug('*** handlePost start ***')
 
-/**
- * 2. mDL用の DS (Document Signer) 証明書を発行します
- * @param {Object} payload - リクエストボディデータ
- * @returns {Promise<Object>} APIからのレスポンスデータ
- */
-async function onboardDocumentSigner(payload) {
-    try {
-        console.log('--- onboardDocumentSigner メソッドの実行開始 ---');
-        
-        const url = `${BASE_URL}/onboard/iso-mdl/document-signers`;
-        const response = await axios.post(url, payload, {
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        console.log('Document Signer 証明書の作成処理が正常に完了しました');
-        return response.data;
-    } catch (error) {
-        console.error('onboardDocumentSigner メソッドでエラーが発生しました');
-        handleError(error);
-        throw error;
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...extraHeaders,
     }
+
+    return await apiInstance.post(url, params, { headers, ...axiosOptions })
+  } catch (error) {
+    logAxiosError(error)
+    throw error
+  } finally {
+    logger.debug('*** handlePost end ***')
+  }
 }
 
 /**
- * 3. 新しい Issuer をシステムにオンボーディング（登録）します
- * @param {Object} payload - リクエストボディデータ
- * @returns {Promise<Object>} APIからのレスポンスデータ
+ * mDL用の IACA（Issuing Authority Certification Authority）証明書を発行する。
+ *
+ * @param {Object} params リクエストパラメータ
+ * @returns {Promise<Object>} 作成された IACA 証明書
  */
-async function onboardIssuer(payload) {
-    try {
-        console.log('--- onboardIssuer メソッドの実行開始 ---');
-        
-        const url = `${BASE_URL}/onboard/issuer`;
-        const response = await axios.post(url, payload, {
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        console.log('Issuer のオンボーディング処理が正常に完了しました');
-        return response.data;
-    } catch (error) {
-        console.error('onboardIssuer メソッドでエラーが発生しました');
-        handleError(error);
-        throw error;
-    }
+const onboardIaca = async (params) => {
+  logger.debug('*** onboardIaca start ***')
+
+  try {
+    const response = await fetchService.handlePost(
+      fetchService.issuerApi,
+      '/onboard/iso-mdl/iacas',
+      null,
+      params
+    )
+
+    const result = response.data
+    logger.debug('result: ', JSON.stringify(result, null, 2))
+
+    return result
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** onboardIaca end ***')
+  }
 }
 
 /**
- * エラーハンドリング用の共通メソッド
- * @param {Error} error - 発生したエラーオブジェクト
+ * mDL用の DS（Document Signer）証明書を発行する。
+ *
+ * @param {Object} params リクエストパラメータ
+ * @returns {Promise<Object>} 作成された DS 証明書
  */
-function handleError(error) {
-    if (error.response) {
-        console.error(`ステータスコード: ${error.response.status}`);
-        console.error('エラーレスポンス詳細:', JSON.stringify(error.response.data, null, 2));
-    } else {
-        console.error(`メッセージ: ${error.message}`);
-    }
+const onboardDocumentSigner = async (params) => {
+  logger.debug('*** onboardDocumentSigner start ***')
+
+  try {
+    const response = await fetchService.handlePost(
+      fetchService.issuerApi,
+      '/onboard/iso-mdl/document-signers',
+      null,
+      params
+    )
+
+    const result = response.data
+    logger.debug('result: ', JSON.stringify(result, null, 2))
+
+    return result
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** onboardDocumentSigner end ***')
+  }
 }
 
-// ==========================================
-// メソッドの実行例（メインフロー）
-// ==========================================
-async function main() {
-    try {
-        console.log('オンボーディングプロセスを開始します');
+/**
+ * 新しい Issuer をオンボーディング（登録）する。
+ *
+ * @param {Object} params リクエストパラメータ
+ * @returns {Promise<Object>} オンボーディングされた Issuer の情報
+ */
+const onboardIssuer = async (params) => {
+  logger.debug('*** onboardIssuer start ***')
 
-        // 1. IACAオンボーディングの実行
-        const iacaParams = {
-            keyGenerationRequest: {
-                keyType: "Ed25519"
-            },
-            onboardRequestDid: {
-                didMethod: "jwk"
-            }
-        };
-        const iacaResult = await onboardIaca(iacaParams);
-        console.log('IACA 応答データ:', JSON.stringify(iacaResult, null, 2));
+  try {
+    const response = await fetchService.handlePost(
+      fetchService.issuerApi,
+      '/onboard/issuer',
+      null,
+      params
+    )
 
+    const result = response.data
+    logger.debug('result: ', JSON.stringify(result, null, 2))
 
-        // 2. Document Signer オンボーディングの実行
-        const dsParams = {
-            keyGenerationRequest: {
-                keyType: "Ed25519"
-            }
-        };
-        const dsResult = await onboardDocumentSigner(dsParams);
-        console.log('Document Signer 応答データ:', JSON.stringify(dsResult, null, 2));
-
-
-        // 3. Issuerオンボーディングの実行
-        const issuerParams = {
-            didMethod: "jwk",
-            keyType: "Ed25519"
-        };
-        const issuerResult = await onboardIssuer(issuerParams);
-        console.log('Issuer 応答データ:', JSON.stringify(issuerResult, null, 2));
-
-        console.log('すべてのオンボーディングプロセスが正常に終了しました');
-    } catch (error) {
-        console.error('メイン処理中にエラーが検知されたため、フローを中断しました');
-    }
+    return result
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** onboardIssuer end ***')
+  }
 }
 
-// 実行
-main();
+// 外部モジュールから呼び出せるようにエクスポートします
+module.exports = {
+  handlePost,
+  onboardIaca,
+  onboardDocumentSigner,
+  onboardIssuer,
+}
