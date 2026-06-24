@@ -1,106 +1,149 @@
-/**
- * 検証セッションを作成する。
- *
- * @param {Object} params リクエストパラメータ（DCQLクエリやポリシーを含む）
- * @returns {Promise<Object>} 検証セッション初期化情報（sessionIdやURLを含む）
- */
-const createVerificationSession = async (params) => {
-  logger.debug('*** createVerificationSession start ***')
-  logger.debug('params: ', JSON.stringify(params, null, 2))
-
-  try {
-    const url = '/verification-session/create'
-    logger.debug('url: ', url)
-
-    const response = await fetchService.handlePost(
-      fetchService.verifierApi,
-      url,
-      null,
-      params,
-      null
-    )
-
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** createVerificationSession end ***')
-  }
-}
-
+import { logger } from './logger';
+import { verificationService } from './verificationService';
 
 /**
- * ウォレットからの検証応答（vp_token）を受け取り、検証を実行する。
- *
- * @param {string} sessionOrStateId 検証セッションID
- * @param {Object} params ウォレットから送信されたデータ
- * @returns {Promise<Object>} 検証結果
+ * 証明書リストをループし、各証明書を1件ずつ検証する
+ * * @returns {Promise<Array<Object>>} セッション情報の配列
  */
-const verifyVerificationSessionResponse = async (sessionOrStateId, params) => {
-  logger.debug('*** verifyVerificationSessionResponse start ***')
-  logger.debug('sessionOrStateId: ', sessionOrStateId)
-  logger.debug('params: ', JSON.stringify(params, null, 2))
+const runIndividualVerification = async () => {
+  logger.info('*** 個別検証ループの開始 ***');
 
-  try {
-    const url = `/verification-session/${sessionOrStateId}/response`
-    logger.debug('url: ', url)
+  const credentialConfigs = [
+    {
+      id: 'awards_verification',
+      format: 'dc+sd-jwt',
+      typeField: 'vct_values',
+      typeValue: 'Awards' 
+    },
+    {
+      id: 'career_verification',
+      format: 'jwt_vc_json',
+      typeField: 'type_values',
+      typeValue: [['Career']]
+    },
+    {
+      id: 'qualifications_verification',
+      format: 'jwt_vc_json',
+      typeField: 'type_values',
+      typeValue: [['Qualifications']]
+    }
+  ];
 
-    const response = await fetchService.handlePost(
-      fetchService.verifierApi,
-      url,
-      null,
-      params,
-      null
-    )
+  const sessionResults = [];
 
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
+  for (const config of credentialConfigs) {
+    try {
+      logger.info(`検証セッションを生成中: ${config.id}`);
 
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** verifyVerificationSessionResponse end ***')
+      const requestParams = {
+        flow_type: 'cross_device',
+        core_flow: {
+          dcql_query: {
+            credentials: [
+              {
+                id: config.id,
+                format: config.format,
+                meta: {
+                  [config.typeField]: config.typeValue
+                }
+              }
+            ]
+          },
+          policies: {
+            vp_policies: [
+              { policy: 'signature' },
+              { policy: 'expiration' }
+            ]
+          }
+        }
+      };
+
+      const sessionData = await verificationService.createVerificationSession(requestParams);
+      
+      logger.info(`セッション作成成功: ${config.id}. セッションID: ${sessionData.sessionId}`);
+      
+      sessionResults.push({
+        credentialId: config.id,
+        sessionId: sessionData.sessionId,
+        // 軽量なPresentationRequestURL
+        // ウォレットは、このURLを読み取った後、当該URLに基づいて詳細な検証条件（DCQLなど）を取得
+        presentationUrl: sessionData.bootstrapAuthorizationRequestUrl 
+      });
+
+    } catch (error) {
+      logger.error(`セッション作成失敗 ${config.id}: `, error.message);
+    }
   }
-}
+
+  logger.info('*** 個別検証ループの終了 ***');
+  return sessionResults;
+};
+
+
+
+
+
 
 /**
- * 既存の検証セッションの状態および結果情報を取得する。
- *
- * @param {string} sessionId 検証セッションID
- * @returns {Promise<Object>} セッション詳細情報およびポリシー検証結果
+ * 複数証明書の組み合わせ検証
+ * 異なる format かつ異なる種類の証明書を組み合わせた検証を行う
+ * * @returns {Promise<Object>} セッション初期化結果
  */
-const getVerificationSessionInfo = async (sessionId) => {
-  logger.debug('*** getVerificationSessionInfo start ***')
-  logger.debug('sessionId: ', sessionId)
+const runCombinedVerification = async () => {
+  logger.info('*** 組み合わせ検証の開始 ***');
+
+  const combinedRequestParams = {
+    flow_type: 'cross_device',
+    core_flow: {
+      dcql_query: {
+        credentials: [
+          {
+            id: 'combined_career_req',
+            format: 'jwt_vc_json',
+            meta: {
+              type_values: [["Career"]]
+            }
+          },
+          {
+            id: 'combined_awards_req',
+            format: 'dc+sd-jwt',
+            meta: {
+              vct_values: ['Awards']
+            }
+          }
+        ]
+      },
+      policies: {
+        vp_policies: [
+          { policy: 'signature' },
+          { policy: 'expiration' },
+          { policy: 'not-before' }
+        ]
+      }
+    }
+  };
 
   try {
-    const url = `/verification-session/${sessionId}/info`
-    logger.debug('url: ', url)
+    const sessionData = await verificationService.createVerificationSession(combinedRequestParams);
+    
+    logger.info('組み合わせ検証セッションの作成に成功しました。');
+    logger.info(`セッションID: ${sessionData.sessionId}`);
+    
+    return {
+      success: true,
+      sessionId: sessionData.sessionId,
+      // 軽量なPresentationRequestURL
+      // ウォレットは、このURLを読み取った後、当該URLに基づいて詳細な検証条件（DCQLなど）を取得
+      presentationUrl: sessionData.bootstrapAuthorizationRequestUrl,
+     // すべての検証条件（DCQL等）を内包したPresentationRequestURL
+      // このURLには詳細な検証条件（DCQLなど）が含まれているため、Verifierへ再問い合わせを行う必要はありません。（同一デバイス内でのアプリ間連携に適しています。）
+      fullPresentationUrl: sessionData.fullAuthorizationRequestUrl
+    };
 
-    const response = await fetchService.handleGet(
-      fetchService.verifierApi,
-      url,
-      null,
-      null
-    )
-
-    const result = response.data
-    logger.debug('result: ', JSON.stringify(result, null, 2))
-
-    return result
   } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
+    logger.error('組み合わせ検証セッションの作成に失敗しました: ', error.message);
+    return { success: false, error: error.message };
   } finally {
-    logger.debug('*** getVerificationSessionInfo end ***')
+    logger.info('*** 組み合わせ検証の終了 ***');
   }
-}
+};
