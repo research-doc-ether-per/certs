@@ -1,64 +1,73 @@
-override suspend fun verify(
-        credential: DigitalCredential,
-        context: PolicyExecutionContext
-    ): Result<JsonObject> {
+object IssuerKeyResolver {
+    private val log = KotlinLogging.logger { }
 
-        println("==================================================")
-        println("CredentialSignaturePolicy 署名検証を開始します")
-        println("対象資格情報の証明書フォーマット ${credential.format}")
-        println("対象資格情報の発行者 ${credential.issuer}")
-        println("==================================================")
-
-        // 発行者の公開鍵（DIDなどから解決された鍵）の取得を試みます
-        val signerKey = credential.getSignerKey()
+    suspend fun resolveForJwtSignedCredential(jwtHeader: JsonObject?, credentialData: JsonObject): Key? {
+        val issuerId = (credentialData["iss"] ?: credentialData["issuer"]).getItAsStringOrId()
         
-        if (signerKey == null) {
-            println("==================================================")
-            println("CredentialSignaturePolicy エラー 発行者の公開鍵の取得に失敗しました")
-            println("資格情報データ $credential")
-            println("==================================================")
-            return Result.failure(
-                IllegalArgumentException(
-                    "Failed to retrieve issuer key to verify credential signature against, for credential: $credential",
-                )
-            )
-        }
-
         println("==================================================")
-        println("CredentialSignaturePolicy 公開鍵の取得に成功しました")
-        println("鍵ID ${signerKey.getKeyId()}")
-        println("鍵タイプ ${signerKey.keyType.name}")
+        println("IssuerKeyResolver 発行者の公開鍵解決を開始します")
+        println("解析対象の発行者ID $issuerId")
+        println("JWTヘッダーの内容 $jwtHeader")
         println("==================================================")
 
-        // 取得した公開鍵を使用して、実際の署名検証を実行します
-        val verificationResult = credential.verify(signerKey)
+        log.trace { "Attempting to resolve issuer key for: $issuerId" }
+        
+        return runCatching {
+            val resolvedKey = when {
+                // 1. DID Resolution
+                issuerId != null && DidUtils.isDidUrl(issuerId) -> {
+                    println("==================================================")
+                    println("IssuerKeyResolver DIDによる解決を試みます")
+                    println("==================================================")
+                    DidKeyResolver.resolveKeyFromDid(issuerId)
+                }
+                
+                // 2. Inline X.509 Certificate Chain
+                jwtHeader?.contains("x5c") == true -> {
+                    println("==================================================")
+                    println("IssuerKeyResolver X5C証明书チェーンによる解決を試みます")
+                    println("==================================================")
+                    X5CKeyResolver.resolveKeyFromX5c(jwtHeader["x5c"]!!.jsonArray)
+                }
+                
+                // 3. JWT VC Issuer Metadata (for SD-JWT VC)
+                issuerId != null && issuerId.startsWith("https://") -> {
+                    println("==================================================")
+                    println("IssuerKeyResolver WellKnownメタデータによる解決を試みます")
+                    println("==================================================")
+                    WellKnownKeyResolver.resolveKeyFromWellKnown(issuerId, jwtHeader)
+                }
+                
+                else -> {
+                    println("==================================================")
+                    println("IssuerKeyResolver 警告 サポートされている解決メソッドが見つかりません")
+                    println("==================================================")
+                    log.warn { "No supported issuer key resolution method found for issuer: $issuerId" }
+                    null
+                }
+            }
 
-        if (verificationResult.isSuccess) {
             println("==================================================")
-            println("CredentialSignaturePolicy 暗号数学的な署名検証に成功しました")
+            if (resolvedKey != null) {
+                println("IssuerKeyResolver 鍵の解決に成功しました")
+                println("解決された鍵ID ${resolvedKey.getKeyId()}")
+                println("解決された鍵タイプ ${resolvedKey.keyType.name}")
+            } else {
+                println("IssuerKeyResolver 警告 該当する解決ルートで鍵を取得できませんでした")
+            }
             println("==================================================")
+
+            resolvedKey
+        }.getOrElse {
+            println("==================================================")
+            println("IssuerKeyResolver 重大なエラー 鍵の解決中に例外が発生しました")
+            println("エラー詳細 ${it.message}")
+            println("==================================================")
+            it.printStackTrace()
             
-            return Result.success(buildJsonObject {
-                put("verification_result", JsonPrimitive(verificationResult.isSuccess))
-                put("signed_credential", JsonPrimitive(credential.signed))
-                put("credential_signature", Json.encodeToJsonElement(credential.signature))
-                put("verified_data", verificationResult.getOrNull() ?: JsonNull)
-                put("successful_issuer_public_key", signerKey.exportJWKObject())
-                put("successful_issuer_public_key_id", JsonPrimitive(signerKey.getKeyId()))
-            })
+            log.debug { "Could not resolve signer key: ${it.stackTraceToString()}" }
+            null
         }
-
-        // 署名検証が失敗した場合の例外と原因を出力します
-        val exception = verificationResult.exceptionOrNull()
-        println("==================================================")
-        println("CredentialSignaturePolicy 署名検証が不一致となりました")
-        println("エラーメッセージ ${exception?.message}")
-        println("==================================================")
-        exception?.printStackTrace()
-
-        return Result.failure(
-            IllegalArgumentException(
-                "Failed to verify credential signature, for credential: $credential",
-            )
-        )
     }
+}
+
