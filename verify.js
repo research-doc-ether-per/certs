@@ -1,17 +1,7 @@
-**url**
-Credential Offer URL
-発行された Credential Offer URL が指定される。
+**docId**
+発行可能証明書ID
+Credential Offer URL の発行対象となる発行可能証明書IDを指定する。
 
-
-
-**endpoint**
-Credential Offer Endpoint 情報
-Credential Offer Endpoint 情報が指定される。
-
-Credential Offer Endpoint 情報が存在しない場合、空のオブジェクトが指定される。
-
-
-
-**endpoint.url**
-Credential Offer Endpoint のURL
-発行された Credential Offer URL をもとに作成した Credential Offer Endpoint のURLが指定される。
+**userName**
+発行可能証明書対象者名
+Credential Offer URL の発行対象となるユーザ名を指定する。
