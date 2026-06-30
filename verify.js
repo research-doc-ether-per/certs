@@ -1,20 +1,37 @@
-
-**groupId**
-グループID
-VP を保存する Verifier が所属するグループIDを指定する。
+**list**
+保存済み VP 情報一覧
+指定されたグループIDに対応する Verifier に保存済みの VP 情報一覧が指定される。
 
 **state**
 state値
-Presentation Request URL から取得した state 値を指定する。
+Presentation Request URL から取得した state値が指定される。
 
-**vp_token**
-VP（Verifiable Presentation）トークン
-提示された VP を表す JWT トークンを指定する。
+**userId**
+ユーザID
+VP を保存したユーザIDが指定される。
 
-**user_id**
-VP提示ユーザID
-VP を提示したユーザIDを指定する。
+**type**
+証明書種別
+保存済み VP に対応する証明書種別が指定される。
 
-**verify_result_string**
-VP検証結果文字列
-Verifier による VP の検証結果文字列を指定する。
+例：
+・Career：職歴
+・Awards：表彰
+・Qualifications：資格
+・b4d：基本4情報
+
+**format**
+証明書フォーマット種別
+保存済み VP に対応する証明書フォーマット種別が指定される。
+
+例：
+・jwt_vc_json
+・vc+sd-jwt
+
+**createDate**
+作成日時（unixエポック秒）
+対象データの作成日時が指定される。
+
+**updateDate**
+更新日時（unixエポック秒）
+対象データの最終更新日時が指定される。
