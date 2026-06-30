@@ -1,28 +1,52 @@
+**list**
+Presentation Request URL および提示可能証明書情報の一覧
+指定されたグループIDに対応する Verifier が発行した Presentation Request URL または提示可能な証明書情報の一覧が指定される。
 
-指定されたグループIDに対応する Verifier が発行した Presentation Request URL または提示可能な証明書の一覧を取得する。
+**id**
+提示可能証明書ID
+指定されたグループIDに対応する Verifier が発行した Presentation Request URL または提示可能な証明書情報に対して、内部で割り当てられた ID が指定される。
 
+**groupId**
+グループID
 
+**presentationRequestUrl**
+Presentation Request URL
+Verifier からの証明書提示要求にアクセスするためのURLが指定される。
 
-指定された提示可能証明書IDに基づき、指定されたグループIDに対応する Verifier が発行した Presentation Request URL または提示可能な証明書情報を取得する。
-Presentation Request URL または提示可能な証明書が存在しない場合、空のオブジェクトが返却される。
+**state**
+ステータス
+Presentation Request から取得した state 値が指定される。
 
+**type**
+証明書種別
+Presentation Request URL または提示可能な証明書情報の種別が指定される。
 
+例：
+・Career：職歴
+・Awards：表彰
+・Qualifications：資格
+・b4d：基本4情報
 
-指定されたグループIDに対応する Verifier から、指定されたユーザに対して Presentation Request URL を発行する。
-発行された Presentation Request URL は保持され、対象ユーザに紐づけられる。
+**format**
+証明書フォーマット種別
+証明書のフォーマット種別が指定される。
 
+例：
+・jwt_vc_json
+・vc+sd-jwt
 
+**targets**
+提示可能な対象者のユーザ名リスト
+対象者がウォレットにサインインする際、認証認可サーバで払い出されたアクセストークンの `preferred_username` と一致する文字列の一覧が指定される。
 
-指定されたグループIDに対応する Verifier から、指定された提示可能証明書IDに基づいて Presentation Request URL を発行する。
+**name**
+検証者名
+Presentation Request を発行した Verifier の表示名が指定される。
 
+**updateDate**
+更新日時（unixエポック秒）
+対象データの最終更新日時が指定される。
 
-指定されたグループIDに対応する Verifier について、対象ユーザを指定して提示可能証明書情報を登録する。
-発行された URL は保持され、対象ユーザに紐づけられる。
-
-
-指定されたグループIDに対応する Verifier について、VP を保存する。
-
-
-指定されたグループIDに対応する Verifier の保存済み VP 一覧を取得する。
-
-指定されたグループIDに対応する Verifier の保存済み VP を参照する。
+**createDate**
+作成日時（unixエポック秒）
+対象データの作成日時が指定される。
