@@ -1,11 +1,31 @@
-**list**
-Credential Offer Endpoint 一覧
-指定されたグループIDに対応する Issuer に登録済みの Credential Offer Endpoint の一覧が指定される。
+**概要**
+
+指定されたグループID、証明書種別および証明書フォーマット種別に基づき、証明書のフィールド定義を取得する。
+
+データが存在しない場合、空のオブジェクトが返却される。
 
 
-**name**
-Credential Offer Endpoint の表示名
+**type**
+証明書種別
+フィールド定義の取得対象となる証明書種別を指定する。
+
+例：
+・Career：職歴
+・Awards：表彰
+・Qualifications：資格
 
 
-**url**
-Credential Offer Endpoint のURL
+**format**
+証明書フォーマット種別
+フィールド定義の取得対象となる証明書フォーマット種別を指定する。
+
+例：
+・jwt_vc_json
+・vc+sd-jwt
+
+
+**image**
+証明書画像データ
+Base64 エンコードされた画像データが指定される。
+
+証明書画像データが存在しない場合、null が指定される。
