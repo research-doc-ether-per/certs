@@ -1,11 +1,11 @@
-**imageData**
-証明書画像データ
-証明書発行時に表示する画像データを指定する。Base64 形式の証明書画像データを指定する。
+**list**
+Credential Offer Endpoint 一覧
+指定されたグループIDに対応する Issuer に登録済みの Credential Offer Endpoint の一覧が指定される。
 
-Base64 形式の証明書画像データは以下の形式で指定する。
 
-・data:image/＜画像データの種類（jpeg/png）＞;base64,＜データ＞
+**name**
+Credential Offer Endpoint の表示名
 
-組織の場合、証明書画像URLが未指定、かつ証明書画像データが存在する場合、本項目が証明書に使用される。
 
-個人用の場合、証明書画像を指定しても使用されない。
+**url**
+Credential Offer Endpoint のURL
