@@ -1,1 +1,2 @@
-npm install @mui/material-nextjs
+Hyperledger Besu の実案件経験はありませんが、DID / VC 製品調査の中で触れたことがあります。
+ローカル環境で Besu の環境を構築し、DID 作成、VC 発行・検証のデモを動かして確認した程度の経験です。
