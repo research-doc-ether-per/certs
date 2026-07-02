@@ -1,2 +1,3 @@
-Hyperledger Besu の実案件経験はありませんが、DID / VC 製品調査の中で触れたことがあります。
-ローカル環境で Besu の環境を構築し、DID 作成、VC 発行・検証のデモを動かして確認した程度の経験です。
+Hyperledger Besu については、実案件での開発経験はありません。
+DID / VC 関連の技術調査として、Credo 系のデモをローカル環境で構築・実行した経験があります。
+その中で、Hyperledger Indy 系の Ledger / VDR を利用した記憶はあります。
