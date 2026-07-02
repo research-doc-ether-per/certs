@@ -1,11 +1,24 @@
-コード整理をお願いします。
 
-対象は主に JS / JSX ファイルです。
-既存コードの形式はできるだけ維持してください。
+export const getKeycloakConfigByPathname = (pathname) => {
+  if (pathname.startsWith('/individual')) {
+    return {
+      type: 'personal',
+      role: 'user',
+      url: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_PERSONAL_URL,
+      realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_PERSONAL_NAME,
+      clientId: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_PERSONAL_CLIENT_ID,
+    }
+  }
 
-未使用のファイルやパラメータがある場合は削除してください。
+  if (pathname.startsWith('/vc_client')) {
+    return {
+      type: 'group',
+      role: 'manager',
+      url: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_GROUP_URL,
+      realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_GROUP_NAME,
+      clientId: process.env.NEXT_PUBLIC_KEYCLOAK_REALM_GROUP_CLIENT_ID,
+    }
+  }
 
-また、コメントについても内容を見直し、必要に応じて整理してください。
-
-debug 用の出力については、処理内容やパラメータを確認しやすいように整理してください。
-ただし、性能への影響も考慮し、不要に多く出力しないようにしてください。
+  return null
+}
