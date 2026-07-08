@@ -1,11 +1,93 @@
-案1について一点確認です。
+<Stack
+  spacing={1}
+  sx={{
+    flex: 1,
+    minHeight: '6rem',
+    p: 2,
+    height: '100%',
+    minWidth: 0,
+  }}
+>
+  {cert.disclosedClaims
+    .filter(
+      (claim) =>
+        claim[3] !== undefined &&
+        claim[3] !== null &&
+        claim[3] !== '' &&
+        claim[4] !== undefined &&
+        claim[4] !== null &&
+        claim[4] !== ''
+    )
+    .map((claim) => (
+      <Stack
+        key={claim[1]}
+        direction="row"
+        alignItems="center"
+        spacing={1}
+        sx={{
+          minWidth: 0,
+        }}
+      >
+        <Checkbox
+          checked={cert.selectedDisclosures.includes(claim[1])}
+          onChange={(e) =>
+            handleFieldSelection(
+              cert.verificationCertId,
+              claim[1],
+              e.target.checked
+            )
+          }
+          disabled={!selectedCertificateIds.includes(cert.verificationCertId)}
+        />
 
-証明書種別ごとに発行可能なユーザ種別
-（個人ユーザ／組織ユーザ／Issuer管理者）を設定する理解ですが、
-この場合の「組織ユーザ」は全組織共通の区分になる、
-という認識でよろしいでしょうか。
+        <Stack
+          spacing={0.25}
+          sx={{
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <Typography
+            variant="body1"
+            fontWeight={500}
+            sx={{
+              lineHeight: 1.4,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
+          >
+            {claim[3]}
+          </Typography>
 
-例えば、組織A・組織B・組織C が存在する場合、
-いずれも同じ「組織ユーザ」として扱われるため、
-「組織Aは発行可、組織Bは発行不可」といった
-組織単位での制御はできない理解で合っていますでしょうか。
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{
+              lineHeight: 1.4,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
+          >
+            {claim[1] === 'image' ? (
+              <img
+                src={claim[4]}
+                alt={claim[3] || 'disclosure'}
+                style={{
+                  width: 60,
+                  minWidth: 60,
+                  height: Math.ceil((60 / 4) * 3),
+                  maxWidth: '100%',
+                }}
+              />
+            ) : (
+              <EllipsisTooltipMultiline
+                text={claim[4]}
+                maxChars={20}
+                emptyText="未設定"
+              />
+            )}
+          </Typography>
+        </Stack>
+      </Stack>
+    ))}
+</Stack>
