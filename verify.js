@@ -1,5 +1,12 @@
-<StyledCard key={did.keyId} sx={{ height: '100%' }}>
-  <StyledCardContent>
+<StyledCard key={did.keyId} sx={{ width: '100%' }}>
+  <StyledCardContent
+    sx={{
+      p: 2,
+      '&:last-child': {
+        pb: 2,
+      },
+    }}
+  >
     <Stack
       direction="row"
       alignItems="center"
@@ -9,13 +16,13 @@
         minWidth: 0,
       }}
     >
-      {/* 左側：alias + DID。長い場合は EllipsisTooltip で省略表示する */}
+      {/* 左側：alias + DID */}
       <Stack
         spacing={0.5}
         sx={{
-          flex: '0 1 auto',
+          flex: 1,
           minWidth: 0,
-          maxWidth: '70%',
+          overflow: 'hidden',
         }}
       >
         <Box
@@ -39,13 +46,15 @@
         </Typography>
       </Stack>
 
-      {/* 右側：default + 詳細。左側情報の後ろに表示する */}
+      {/* 右側：default + 詳細 */}
       <Stack
         direction="row"
         alignItems="center"
         spacing={1}
         sx={{
+          ml: 'auto',
           flexShrink: 0,
+          alignSelf: 'center',
         }}
       >
         {did.default && (
