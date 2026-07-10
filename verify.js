@@ -1,63 +1,76 @@
+import PropTypes from 'prop-types'
+import { Box, Tooltip, Typography } from '@mui/material'
+
 /**
- * Waltid Wallet API の認証用リクエストデータを生成する
+ * 省略表示付き Tooltip テキストコンポーネント
  *
- * @param {Object} params
- * 認証データ生成に必要な情報
+ * 文字列が表示領域を超える場合は「...」で省略表示し、
+ * hover 時に Tooltip で全文を表示する。
  *
- * @param {Object} params.kcUser
- * Keycloak Access Token から取得したユーザー情報
+ * 外側の Box は Chip 風表示用の固定スタイルとし、
+ * Typography の props は呼び出し元から指定可能とする。
  *
- * @param {string} params.kcToken
- * Keycloak Access Token
+ * @param {Object} props
+ * コンポーネントの props
  *
- * @param {string} params.realmName
- * Access Token から取得した Realm 名
+ * @param {string} props.text
+ * 表示対象の文字列。
+ * 値が存在しない場合は「不明」を表示する。
  *
- * @param {string} params.userId
- * リクエストパラメータで指定されたユーザーID または組織 Wallet ID
+ * @param {Object} [props.sx]
+ * Typography に適用する追加スタイル
  *
- * @param {Object} params.allowedRealms
- * 設定ファイルから取得した許可 Realm 情報
+ * @param {Object} props.others
+ * Typography に渡すその他の props
  *
- * @returns {Object}
- * Waltid Wallet API の login / register に利用するリクエストデータ
+ * @returns {JSX.Element}
+ * 省略表示および Tooltip 表示に対応したテキストコンポーネント
  */
-const createWalletAuthPostData = ({
-  kcUser,
-  kcToken,
-  realmName,
-  userId,
-  allowedRealms,
-}) => {
-  // 個人ユーザの場合
-  if (realmName === allowedRealms.personal) {
-    return {
-      name: kcUser.preferred_username,
-      type: 'oidc',
-      token: kcToken,
-    }
-  }
+export default function EllipsisTooltipText({
+  text,
+  sx = {},
+  ...others
+}) {
+  const value = text || '不明'
 
-  // 組織ユーザの場合
-  if (realmName === allowedRealms.organization) {
-    const email = createOrganizationWalletEmail(kcUser.iss, userId)
+  return (
+    <Tooltip title={value} arrow>
+      <Box
+        component="span"
+        sx={{
+          minWidth: 0,
+          maxWidth: '100%',
+          display: 'inline-flex',
+          alignItems: 'center',
+          borderRadius: '16px',
+          px: 1.5,
+          py: 0.5,
+          bgcolor: 'grey.100',
+          cursor: 'pointer',
+        }}
+      >
+        <Typography
+          component="span"
+          variant="body2"
+          {...others}
+          sx={{
+            minWidth: 0,
+            maxWidth: '100%',
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            ...sx,
+          }}
+        >
+          {value}
+        </Typography>
+      </Box>
+    </Tooltip>
+  )
+}
 
-    return {
-      name: kcUser.preferred_username,
-      type: 'email',
-      email,
-      password: createPassHash(email),
-    }
-  }
-
-  const error = new Error('未対応の Realm です')
-  error.code = 'InvalidRequestError'
-  error.params = [
-    {
-      key: 'realmName',
-      value: realmName,
-    },
-  ]
-
-  throw error
+EllipsisTooltipText.propTypes = {
+  text: PropTypes.string,
+  sx: PropTypes.object,
 }
