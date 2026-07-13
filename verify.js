@@ -1,1 +1,6 @@
-Holder Binding の検証では、VC JWT Payload 内の sub を主に参照しているため、Policy に holder-binding を指定している場合でも、credentialSubject.id の有無は検証結果に影響しない認識です。
+これまで VC 内の sub の内容はあまり意識していませんでした。
+
+現状では、発行済みの VP 内で指定されている Issuer の値をもとに検証されているように見えます。
+また、検証結果が true になっているため、VP 作成時に VC をまとめる際、内部の sub が変わるのかどうかが少し気になっています。
+
+この点については、明日 debug で値を確認します。
