@@ -1,13 +1,48 @@
-すみません、ご質問の意図を誤って理解していました。
+@JvmBlocking
+@JvmAsync
+@JsPromise
+@JsExport.Ignore
+override suspend fun verify(data: JsonObject, args: Any?, context: Map<String, Any>): Result<Any> {
+    // 1. Print all incoming raw parameters
+    println("==== HolderBindingPolicy Verification Started ====")
+    println("Parameter [data]: $data")
+    println("Parameter [args]: $args")
+    println("Parameter [context]: $context")
 
-先ほどは、「複数の VC をまとめて提示する際に、各 VC の Holder DID が異なる場合にエラーになるか」という観点で確認していました。
-ただ、実際には「VP の署名鍵と VC 内の Holder DID の鍵が一致しない場合に、Holder の署名エラーになるか」というご質問だったと理解しました。
+    // 2. Extract and print the VP signer (Presenter DID)
+    val presenterDid = data[JwsOption.ISSUER]!!.jsonPrimitive.content
+    println("Parsed [presenterDid] (VP Signer): $presenterDid")
 
-改めて確認したところ、VP の署名鍵と VC 内の Holder DID の鍵が一致していない場合でも、API 自体はエラーにはなりませんでした。
+    // 3. Extract and print the internal VP structure
+    val vp = data["vp"]?.jsonObject ?: throw IllegalArgumentException("No \"vp\" field in VP!")
+    println("Parsed [vp] object: $vp")
 
-確認方法としては、VC 内の Holder DID が DID1 の状態で、Holder DID2 を使用して提示を行いました。
-この場合、提示結果（session vp）は取得できました。 
+    // 4. Extract and print the contained credentials array
+    val credentials =
+        vp["verifiableCredential"]?.jsonArray ?: throw IllegalArgumentException("No \"verifiableCredential\" field in \"vp\"!")
+    println("Contained [verifiableCredential] array (RAW): $credentials")
 
-ただし、DID1 を削除した後に Holder DID2 で提示した場合は、API 自体はエラーになりませんが、検証結果（session vp）は `null` となりました。
+    // 5. Iterate and print each internal VC's subject DID
+    val credentialSubjects = credentials.map {
+        val rawJwt = it.jsonPrimitive.content
+        val subjectDid = rawJwt.decodeJws().payload["sub"]!!.jsonPrimitive.content.split("#").first()
+        println("  - Extracted VC [subjectDid]: $subjectDid")
+        subjectDid
+    }
+    println("All extracted [credentialSubjects]: $credentialSubjects")
 
-実装コードの該当箇所については、現在確認中です。
+    // 6. Print the evaluation result
+    val isMatch = credentialSubjects.all { it == presenterDid }
+    println("Comparison result (Does presenterDid match all credentialSubjects?): $isMatch")
+    println("==================================================")
+
+    return when {
+        isMatch -> Result.success(presenterDid)
+        else -> Result.failure(
+          id.walt.policies.HolderBindingException(
+            presenterDid = presenterDid,
+            credentialDids = credentialSubjects
+          )
+        )
+    }
+}
