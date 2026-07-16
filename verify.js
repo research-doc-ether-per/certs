@@ -1,5 +1,7 @@
+// npm install -D eslint-plugin-n
 const js = require('@eslint/js')
 const prettierPlugin = require('eslint-plugin-prettier')
+const nPlugin = require('eslint-plugin-n')
 
 module.exports = [
   {
@@ -38,16 +40,34 @@ module.exports = [
     },
     plugins: {
       prettier: prettierPlugin,
+      n: nPlugin,
     },
     rules: {
       'prettier/prettier': 'error',
+
       'no-console': 'warn',
+
       'no-unused-vars': [
         'warn',
         {
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
           ignoreRestSiblings: true,
+        },
+      ],
+
+      // Node.js で存在しない require / import を検出
+      'n/no-missing-require': 'error',
+
+      // package.json の dependencies に未定義のモジュール使用を検出
+      'n/no-extraneous-require': 'warn',
+
+      // Node.js 非対応構文チェック
+      'n/no-unsupported-features/es-syntax': [
+        'error',
+        {
+          version: '>=20.0.0',
+          ignores: [],
         },
       ],
     },
