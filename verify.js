@@ -1,42 +1,99 @@
 /**
- * Status List情報を登録する
+ * Credential Offer用の共通Payloadを準備する
  *
  * @param {Object} params パラメーター
- * @param {Object} params.client PostgreSQLクライアント
- * @param {Object} params.walletDBService Wallet DBサービス
- * @param {string} params.groupId グループID
- * @param {string} params.type 証明書タイプ
- * @param {string} params.statusListUrl Status List URL
- * @returns {Promise<void>}
+ * @returns {Object} 共通Payload
  */
-const registerStatusList = async ({
-  client,
-  walletDBService,
-  groupId,
-  type,
-  statusListUrl,
+const prepareCredentialOfferPayload = ({
+  issuerKey,
+  issuerDid,
+  credentialConfigurationId,
+  credentialData,
+  credentialInformation,
+  selectiveDisclosure,
+  authenticationMethod,
+  category,
+  certName,
+  format,
+  docId,
+  issuanceDate,
+  expirationDate,
+  ctxByFormat,
+  categories,
+  images,
 }) => {
-  await walletDBService._insertWithConflictHandling(
-    client,
-    'status_list',
-    {
-      group_id: groupId,
-      type,
-      status_list_credential_url: statusListUrl,
+  const { type } = credentialData
+
+  const payload = {
+    issuerKey,
+    issuerDid,
+    credentialConfigurationId,
+
+    credentialData: {
+      '@context': ctxByFormat[format],
+
+      type: [
+        'VerifiableCredential',
+        type,
+      ],
+
+      credentialSubject: {
+        credentialInformation: {
+          ...credentialInformation,
+          docId,
+
+          ...(categories[category]
+            ? {
+                type: categories[category],
+              }
+            : {}),
+
+          certName,
+
+          image:
+            images[category] ||
+            images.default,
+
+          issuanceDate,
+          expirationDate,
+        },
+      },
     },
-    [
-      'group_id',
-      'type',
-      'status_list_credential_url',
-    ]
-  )
+
+    standardVersion: 'DRAFT13',
+    authenticationMethod,
+    selectiveDisclosure,
+  }
+
+  // 有効期限が指定されていない場合は、
+  // expirationDateプロパティ自体を削除する
+  if (!expirationDate) {
+    delete payload
+      .credentialData
+      .credentialSubject
+      .credentialInformation
+      .expirationDate
+  }
+
+  return payload
 }
 
-
- await registerStatusList({
-    client,
-    walletDBService,
-    groupId,
-    type,
-    statusListUrl,
+const payload =
+  prepareCredentialOfferPayload({
+    issuerKey,
+    issuerDid,
+    credentialConfigurationId,
+    credentialData,
+    credentialInformation,
+    selectiveDisclosure,
+    authenticationMethod,
+    category,
+    certName,
+    format,
+    docId,
+    issuanceDate,
+    expirationDate,
+    ctxByFormat,
+    categories,
+    images,
   })
