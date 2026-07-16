@@ -1,75 +1,19 @@
-// npm install -D eslint-plugin-n
-const js = require('@eslint/js')
-const prettierPlugin = require('eslint-plugin-prettier')
-const nPlugin = require('eslint-plugin-n')
+ // 組織Credential Offer URL一覧取得
+  getOrgCredentialOfferUrlList:
+    authTypes.organizationUser,
 
-module.exports = [
-  {
-    ignores: [
-      'node_modules/**',
-      'logs/**',
-      'dist/**',
-      'build/**',
-      'coverage/**',
-      '.prettierrc',
-      'package-lock.json',
-    ],
-  },
+  // 組織Credential Offer URL情報取得
+  getOrgCredentialOfferUrlInfo:
+    authTypes.organizationUser,
 
-  js.configs.recommended,
+  // 組織Credential Offer URL発行
+  issueOrgCredentialOfferUrl:
+    authTypes.organizationUser,
 
-  {
-    files: ['**/*.js'],
-    languageOptions: {
-      ecmaVersion: 2021,
-      sourceType: 'commonjs',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        module: 'readonly',
-        require: 'readonly',
-        exports: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-      },
-    },
-    plugins: {
-      prettier: prettierPlugin,
-      n: nPlugin,
-    },
-    rules: {
-      'prettier/prettier': 'error',
+  // 証明書ID指定組織Credential Offer URL発行
+  issueOrgCredentialOfferUrlByCredentialId:
+    authTypes.organizationUser,
 
-      'no-console': 'warn',
-
-      'no-unused-vars': [
-        'warn',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          ignoreRestSiblings: true,
-        },
-      ],
-
-      // Node.js で存在しない require / import を検出
-      'n/no-missing-require': 'error',
-
-      // package.json の dependencies に未定義のモジュール使用を検出
-      'n/no-extraneous-require': 'warn',
-
-      // Node.js 非対応構文チェック
-      'n/no-unsupported-features/es-syntax': [
-        'error',
-        {
-          version: '>=20.0.0',
-          ignores: [],
-        },
-      ],
-    },
-  },
-]
+  // 組織発行可能証明書情報登録
+  registerOrgIssuableCredential:
+    authTypes.organizationUser,
