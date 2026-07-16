@@ -1,99 +1,130 @@
 /**
- * Credential Offer用の共通Payloadを準備する
+ * クレデンシャル設定のサポート可否を確認する
+ *
+ * typeが指定されている場合、以下を確認する。
+ * 1. credential_configuration_idからformatを除いた値とtypeが一致すること
+ * 2. formatに応じてCredential Configurationから取得したTypeとtypeが一致すること
  *
  * @param {Object} params パラメーター
- * @returns {Object} 共通Payload
+ * @param {string} params.configId Credential Configuration ID
+ * @param {string} [params.type] クレデンシャルタイプ
+ * @returns {Promise<Object>} Credential Configuration情報
  */
-const prepareCredentialOfferPayload = ({
-  issuerKey,
-  issuerDid,
-  credentialConfigurationId,
-  credentialData,
-  credentialInformation,
-  selectiveDisclosure,
-  authenticationMethod,
-  category,
-  certName,
-  format,
-  docId,
-  issuanceDate,
-  expirationDate,
-  ctxByFormat,
-  categories,
-  images,
-}) => {
-  const { type } = credentialData
+const validateCredentialSupport = async (params) => {
+  logger.debug('**** validateCredentialSupport start ****')
+  logger.debug('params: ', JSON.stringify(params, null, 2))
 
-  const payload = {
-    issuerKey,
-    issuerDid,
-    credentialConfigurationId,
+  try {
+    const { configId, type } = params
 
-    credentialData: {
-      '@context': ctxByFormat[format],
+    // Credential Configuration一覧を取得する
+    const credentialConfigurationsSupported =
+      await getCredentialConfigurations()
 
-      type: [
-        'VerifiableCredential',
-        type,
-      ],
+    // 指定されたCredential Configuration情報を取得する
+    const supportedInfo =
+      credentialConfigurationsSupported?.[configId]
 
-      credentialSubject: {
-        credentialInformation: {
-          ...credentialInformation,
-          docId,
+    logger.debug(
+      'supportedInfo: ',
+      JSON.stringify(supportedInfo, null, 2)
+    )
 
-          ...(categories[category]
-            ? {
-                type: categories[category],
-              }
-            : {}),
+    // 指定されたCredential Configurationが存在しない場合
+    if (!supportedInfo) {
+      throw new Error(
+        `サポートされていない credential_configuration_id: ${configId}`
+      )
+    }
 
-          certName,
+    // typeが指定されている場合のみTypeを確認する
+    if (type) {
+      const { format } = supportedInfo
+      const formatSuffix = `_${format}`
 
-          image:
-            images[category] ||
-            images.default,
+      // credential_configuration_idの末尾からformatを除去してTypeを取得する
+      const configIdType = configId.endsWith(formatSuffix)
+        ? configId.slice(0, -formatSuffix.length)
+        : configId
 
-          issuanceDate,
-          expirationDate,
-        },
-      },
-    },
+      logger.debug('configIdType: ', configIdType)
 
-    standardVersion: 'DRAFT13',
-    authenticationMethod,
-    selectiveDisclosure,
+      // credential_configuration_idから取得したTypeを確認する
+      if (type !== configIdType) {
+        throw new Error(
+          `サポートされていない type: ${type}`
+        )
+      }
+
+      let configurationType
+
+      switch (format) {
+        case 'jwt_vc_json': {
+          // JWT VCの場合はcredential_definition.typeからTypeを取得する
+          const credentialDefinitionTypes =
+            supportedInfo?.credential_definition?.type
+
+          if (
+            !Array.isArray(credentialDefinitionTypes) ||
+            credentialDefinitionTypes.length < 2
+          ) {
+            throw new Error(
+              'credential_definition.typeが不正です。'
+            )
+          }
+
+          configurationType =
+            credentialDefinitionTypes[
+              credentialDefinitionTypes.length - 1
+            ]
+
+          break
+        }
+
+        case 'vc+sd-jwt': {
+          // SD-JWT VCの場合はvctの末尾からTypeを取得する
+          const { vct } = supportedInfo
+
+          if (!vct) {
+            throw new Error(
+              'vctが指定されていません。'
+            )
+          }
+
+          configurationType = vct.split('/').pop()
+
+          break
+        }
+
+        default: {
+          const error = new Error(
+            `サポートされていない credential format: ${format}`
+          )
+          error.code = 'InvalidParamsError'
+          error.params = [format]
+          throw error
+        }
+      }
+
+      logger.debug(
+        'configurationType: ',
+        configurationType
+      )
+
+      // Credential Configurationから取得したTypeを確認する
+      if (type !== configurationType) {
+        throw new Error(
+          `サポートされていない type: ${type}`
+        )
+      }
+    }
+
+    return supportedInfo
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('**** validateCredentialSupport end ****')
   }
-
-  // 有効期限が指定されていない場合は、
-  // expirationDateプロパティ自体を削除する
-  if (!expirationDate) {
-    delete payload
-      .credentialData
-      .credentialSubject
-      .credentialInformation
-      .expirationDate
-  }
-
-  return payload
 }
-
-const payload =
-  prepareCredentialOfferPayload({
-    issuerKey,
-    issuerDid,
-    credentialConfigurationId,
-    credentialData,
-    credentialInformation,
-    selectiveDisclosure,
-    authenticationMethod,
-    category,
-    certName,
-    format,
-    docId,
-    issuanceDate,
-    expirationDate,
-    ctxByFormat,
-    categories,
-    images,
-  })
