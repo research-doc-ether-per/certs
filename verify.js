@@ -1,37 +1,14 @@
 
-/**
- * Issuerが存在するか確認する
- *
- * @param {Object} walletDBService Wallet DBサービス
- * @param {string} groupId グループID
- * @returns {Promise<void>}
- */
-const checkIssuerExists = async (
-  walletDBService,
-  groupId
-) => {
-  const exists = await walletDBService.exists(
-    'issuer',
-    {
-      group_id: groupId,
-    }
+const credentialInformation =
+  credentialSubject?.credentialInformation || {}
+
+const {
+  issuanceDate,
+  expirationDate,
+} =
+  prepareCredentialDates(
+    credentialInformation.expirationDate
   )
-
-  if (exists) {
-    return
-  }
-
-  const error = new Error(
-    `Issuer does not exist. groupId: ${groupId}`
-  )
-
-  error.code = 'InvalidParamsError'
-  error.params = [groupId]
-
-  throw error
-}
-
-
 /**
  * 有効期限を確認し、発行日時を取得する
  *
@@ -46,7 +23,7 @@ const checkIssuerExists = async (
  *   expirationDate: string|null
  * }} 発行日時および有効期限
  */
-const validateExpirationDateAndGetIssuanceDate = (
+const prepareCredentialDates = (
   expirationDate
 ) => {
   // 有効期限が指定されていない場合
