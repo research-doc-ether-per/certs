@@ -1,18 +1,6 @@
-/**
- * クレデンシャル設定のサポート可否を確認する
- *
- * typeが指定されている場合、以下を確認する。
- * 1. credential_configuration_idからformatを除いた値とtypeが一致すること
- * 2. formatに応じてCredential Configurationから取得したTypeとtypeが一致すること
- *
- * @param {Object} params パラメーター
- * @param {string} params.configId Credential Configuration ID
- * @param {string} [params.type] クレデンシャルタイプ
- * @returns {Promise<Object>} Credential Configuration情報
- */
 const validateCredentialSupport = async (params) => {
   logger.debug('**** validateCredentialSupport start ****')
-  logger.debug('params: ', JSON.stringify(params, null, 2))
+  logger.debug('Parameters: ', JSON.stringify(params, null, 2))
 
   try {
     const { configId, type } = params
@@ -26,14 +14,14 @@ const validateCredentialSupport = async (params) => {
       credentialConfigurationsSupported?.[configId]
 
     logger.debug(
-      'supportedInfo: ',
+      'Supported credential configuration: ',
       JSON.stringify(supportedInfo, null, 2)
     )
 
     // 指定されたCredential Configurationが存在しない場合
     if (!supportedInfo) {
       throw new Error(
-        `サポートされていない credential_configuration_id: ${configId}`
+        `Unsupported credential_configuration_id: ${configId}`
       )
     }
 
@@ -47,12 +35,15 @@ const validateCredentialSupport = async (params) => {
         ? configId.slice(0, -formatSuffix.length)
         : configId
 
-      logger.debug('configIdType: ', configIdType)
+      logger.debug(
+        'Type extracted from credential_configuration_id: ',
+        configIdType
+      )
 
       // credential_configuration_idから取得したTypeを確認する
       if (type !== configIdType) {
         throw new Error(
-          `サポートされていない type: ${type}`
+          `Unsupported credential type: ${type}`
         )
       }
 
@@ -69,7 +60,7 @@ const validateCredentialSupport = async (params) => {
             credentialDefinitionTypes.length < 2
           ) {
             throw new Error(
-              'credential_definition.typeが不正です。'
+              'Invalid credential_definition.type.'
             )
           }
 
@@ -87,7 +78,7 @@ const validateCredentialSupport = async (params) => {
 
           if (!vct) {
             throw new Error(
-              'vctが指定されていません。'
+              'vct is not specified.'
             )
           }
 
@@ -98,7 +89,7 @@ const validateCredentialSupport = async (params) => {
 
         default: {
           const error = new Error(
-            `サポートされていない credential format: ${format}`
+            `Unsupported credential format: ${format}`
           )
           error.code = 'InvalidParamsError'
           error.params = [format]
@@ -107,22 +98,22 @@ const validateCredentialSupport = async (params) => {
       }
 
       logger.debug(
-        'configurationType: ',
+        'Type extracted from credential configuration: ',
         configurationType
       )
 
       // Credential Configurationから取得したTypeを確認する
       if (type !== configurationType) {
         throw new Error(
-          `サポートされていない type: ${type}`
+          `Unsupported credential type: ${type}`
         )
       }
     }
 
     return supportedInfo
   } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
+    logger.error('Error message: ', error.message)
+    logger.error('Error stack: ', error.stack)
     throw error
   } finally {
     logger.debug('**** validateCredentialSupport end ****')
