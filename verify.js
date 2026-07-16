@@ -1,8 +1,34 @@
-// eslint.config.cjs
-// npm install -D @eslint/js
+// npm uninstall eslint-plugin-node
+// npm install -D eslint@10 @eslint/js@10 prettier eslint-plugin-prettier@5 eslint-config-prettier@10 globals
+// rm .eslintrc.json
+// rm .eslintignore
+
+
+// "@eslint/js": "^10.3.0",
+// "eslint": "^10.3.0",
+// "eslint-config-prettier": "^10.1.8",
+// "eslint-plugin-prettier": "^5.5.5",
+// "globals": "^16.0.0",
+// "prettier": "^3.7.4"
+
+// {
+//   "editor.showUnused": true,
+//   "eslint.validate": ["javascript", "javascriptreact"],
+//   "eslint.workingDirectories": [
+//     {
+//       "mode": "auto"
+//     }
+//   ],
+//   "editor.codeActionsOnSave": {
+//     "source.fixAll.eslint": "explicit"
+//   },
+//   "editor.formatOnSave": false
+// }
+
+
 const js = require('@eslint/js')
-const prettierPlugin = require('eslint-plugin-prettier')
-const nodePlugin = require('eslint-plugin-node')
+const globals = require('globals')
+const eslintPluginPrettierRecommended = require('eslint-plugin-prettier/recommended')
 
 module.exports = [
   {
@@ -12,8 +38,7 @@ module.exports = [
       'dist/**',
       'build/**',
       'coverage/**',
-      '*.config.js',
-      '*.config.cjs',
+      'package-lock.json',
     ],
   },
 
@@ -23,31 +48,14 @@ module.exports = [
     files: ['**/*.js'],
     languageOptions: {
       ecmaVersion: 2021,
-      sourceType: 'module',
+      sourceType: 'commonjs',
       globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        module: 'readonly',
-        require: 'readonly',
-        exports: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
+        ...globals.node,
+        ...globals.es2021,
       },
     },
-    plugins: {
-      prettier: prettierPlugin,
-      node: nodePlugin,
-    },
     rules: {
-      'prettier/prettier': 'error',
-
       'no-console': 'warn',
-
       'no-unused-vars': [
         'warn',
         {
@@ -56,14 +64,8 @@ module.exports = [
           ignoreRestSiblings: true,
         },
       ],
-
-      'node/no-unsupported-features/es-syntax': [
-        'error',
-        {
-          version: '>=12.0.0',
-          ignores: [],
-        },
-      ],
     },
   },
+
+  eslintPluginPrettierRecommended,
 ]
