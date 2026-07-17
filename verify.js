@@ -1,5 +1,5 @@
-const removeSpaces = (value) => {
-  return String(value ?? '').replace(/[\s　]/g, '')
+const trimValue = (value) => {
+  return String(value ?? '').replace(/^[\s　]+|[\s　]+$/g, '')
 }
 
 
