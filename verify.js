@@ -1,9 +1,3 @@
 const trimValue = (value) => {
-  return String(value ?? '').replace(/^[\s　]+|[\s　]+$/g, '')
+  return String(value ?? '').replace(/^[\s\u00A0\u200B\uFEFF　]+|[\s\u00A0\u200B\uFEFF　]+$/g, '')
 }
-
-
-  const apiName = trimValue(row[0])
-  const apiId = trimValue(row[1])
-  const apiPath = trimValue(row[2])
-  const method = trimValue(row[3])
