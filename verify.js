@@ -1,149 +1,143 @@
-{/* 対象者入力 */}
-{isAdminIssueMode && (
-  <Grid item xs={12}>
-    <Stack
-      direction={{
-        xs: 'column',
-        sm: 'column',
-        lg: 'row',
-        xl: 'row',
-      }}
-      alignItems={{
-        xs: 'stretch',
-        sm: 'stretch',
-        lg: 'flex-end',
-        xl: 'flex-end',
-      }}
-      spacing={2}
-    >
-      {/* 対象者入力欄 */}
-      <Stack
-        flex={{
-          xs: 1,
-          sm: 1,
-          lg: 3,
-          xl: 3,
-        }}
-        width={{
-          xs: '100%',
-          sm: '100%',
-        }}
-      >
-        {isAdminToIndividual && (
-          <>
-            <TextFieldLabel
-              title="対象者"
-              required
-            />
+// 一覧を取得してStateに反映する
+const refreshCredentialList = async () => {
+  setLoading(true)
 
-            <CustomTextField
-              name="targetUser"
-              value={
-                credentialForm.targetUser
-              }
-              onChange={handleChange}
-              error={Boolean(
-                inputErrors.targetUser
-              )}
-              helperText={
-                inputErrors.targetUser
-              }
-              placeholder="対象者のIDを入力してください"
-              inputProps={{
-                maxLength: 64,
-              }}
-            />
-          </>
-        )}
+  try {
+    let result
 
-        {isAdminToOrganization && (
-          <>
-            <TextFieldLabel
-              title="組織ウォレット"
-              required
-            />
+    switch (userInfoRole) {
+      case roleTypes.vcClient:
+        // 組織ユーザー向けCredential Offer URL一覧を取得する
+        result = await getOrgCredentialOfferUrlList(groupId)
+        break
 
-            <CustomTextArea
-              name="targetUser"
-              value={
-                credentialForm.targetUser
-              }
-              onChange={handleChange}
-              error={Boolean(
-                inputErrors.targetUser
-              )}
-              helperText={
-                inputErrors.targetUser
-              }
-              placeholder="組織ウォレットDIDを入力してください"
-              minRows={3}
-              maxRows={6}
-              inputProps={{
-                maxLength: 1024,
-              }}
-            />
-          </>
-        )}
-      </Stack>
+      case roleTypes.individual:
+        // 個人ユーザー向けCredential Offer URL一覧を取得する
+        result = await getCredentialOfferURLs(groupId)
+        break
 
-      {/* 操作ボタン */}
-      <Stack
-        flex={{
-          xs: 1,
-          sm: 1,
-          lg: 1,
-          xl: 1,
-        }}
-        width={{
-          xs: '100%',
-          sm: '100%',
-          lg: 'auto',
-          xl: 'auto',
-        }}
-        direction="column"
-        justifyContent="flex-end"
-        alignItems={{
-          xs: 'stretch',
-          sm: 'stretch',
-          lg: 'flex-end',
-          xl: 'flex-end',
-        }}
-        spacing={2}
-      >
-        <CustomButton
-          onClick={handleAddUser}
-          label="追加"
-          disabled={
-            Boolean(
-              inputErrors.targetUser
-            ) ||
-            !credentialForm.targetUser
-          }
-          color="primary"
-          variant="contained"
-        />
+      case roleTypes.vcAdmin: {
+        // 個人向けおよび組織向けの一覧を並行して取得する
+        const [
+          individualResult,
+          organizationResult,
+        ] = await Promise.all([
+          getCredentialOfferURLs(groupId),
+          getOrgCredentialOfferUrlList(groupId),
+        ])
 
-        <CustomFileUploaderButton
-          onChange={handleFileUpload}
-          name="csv"
-          label="アップロード"
-          accept=".csv"
-          color="primary"
-          variant="contained"
-        />
-      </Stack>
-    </Stack>
+        // 個人向け一覧の取得に失敗した場合
+        if (!individualResult.success) {
+          setError({
+            status: individualResult.status,
+            ...individualResult.data,
+          })
+          return
+        }
 
-    {/* CSVアップロード時のエラー表示 */}
-    {inputErrors.csv && (
-      <Stack>
-        <FormHelperText
-          error
-          sx={{ ml: 2 }}
-        >
-          {inputErrors.csv}
-        </FormHelperText>
-      </Stack>
-    )}
-  </Grid>
-)}
+        // 組織向け一覧の取得に失敗した場合
+        if (!organizationResult.success) {
+          setError({
+            status: organizationResult.status,
+            ...organizationResult.data,
+          })
+          return
+        }
+
+        // 個人向けと組織向けの一覧を結合する
+        result = {
+          success: true,
+          data: {
+            list: [
+              ...(individualResult.data?.list || []),
+              ...(organizationResult.data?.list || []),
+            ],
+          },
+        }
+
+        break
+      }
+
+      default:
+        setError({
+          status: 403,
+          message: 'Unsupported user role.',
+        })
+        return
+    }
+
+    if (!result?.success) {
+      setError({
+        status: result?.status,
+        ...result?.data,
+      })
+      return
+    }
+
+    // 作成日時の降順に並び替える
+    const dataList = [
+      ...(result.data?.list || []),
+    ].sort((a, b) => {
+      return (
+        new Date(b.createDate).getTime() -
+        new Date(a.createDate).getTime()
+      )
+    })
+
+    // Credential Configuration一覧を取得する
+    const configResult =
+      await getCredentialConfigurations(
+        LOCALIZE_PROCESS_TARGET.DISPLAY
+      )
+
+    const configurations = configResult.success
+      ? configResult.data || {}
+      : {}
+
+    // typeと表示名のマップを作成する
+    const tempConfig = {}
+
+    Object.keys(configurations).forEach((key) => {
+      const configuration = configurations[key]
+
+      const format = configuration?.format
+      const formatSuffix = format
+        ? `_${format}`
+        : ''
+
+      const type =
+        formatSuffix && key.endsWith(formatSuffix)
+          ? key.slice(0, -formatSuffix.length)
+          : key
+
+      const typeDisplayName =
+        configuration
+          ?.credential_metadata
+          ?.display?.[0]
+          ?.name || type
+
+      if (!tempConfig[type]) {
+        tempConfig[type] = typeDisplayName
+      }
+    })
+
+    // 必要なStateを更新する
+    setCredentialList(dataList)
+    setCredentialConfig(tempConfig)
+    setError(null)
+  } catch (error) {
+    logger.error(
+      'Failed to refresh credential list: ',
+      error
+    )
+
+    setError({
+      status: 500,
+      message:
+        error.message ||
+        'Failed to refresh credential list.',
+    })
+  } finally {
+    setLoading(false)
+  }
+}
