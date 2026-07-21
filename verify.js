@@ -1,102 +1,149 @@
+{/* 対象者入力 */}
+{isAdminIssueMode && (
+  <Grid item xs={12}>
+    <Stack
+      direction={{
+        xs: 'column',
+        sm: 'column',
+        lg: 'row',
+        xl: 'row',
+      }}
+      alignItems={{
+        xs: 'stretch',
+        sm: 'stretch',
+        lg: 'flex-end',
+        xl: 'flex-end',
+      }}
+      spacing={2}
+    >
+      {/* 対象者入力欄 */}
+      <Stack
+        flex={{
+          xs: 1,
+          sm: 1,
+          lg: 3,
+          xl: 3,
+        }}
+        width={{
+          xs: '100%',
+          sm: '100%',
+        }}
+      >
+        {isAdminToIndividual && (
+          <>
+            <TextFieldLabel
+              title="対象者"
+              required
+            />
 
-import {
-  TextField,
-  Typography,
-} from '@mui/material'
+            <CustomTextField
+              name="targetUser"
+              value={
+                credentialForm.targetUser
+              }
+              onChange={handleChange}
+              error={Boolean(
+                inputErrors.targetUser
+              )}
+              helperText={
+                inputErrors.targetUser
+              }
+              placeholder="対象者のIDを入力してください"
+              inputProps={{
+                maxLength: 64,
+              }}
+            />
+          </>
+        )}
 
-const textFieldStyles = {
-  '& .MuiInputBase-input': {
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-}
+        {isAdminToOrganization && (
+          <>
+            <TextFieldLabel
+              title="組織ウォレット"
+              required
+            />
 
-const textAreaStyles = {
-  '& .MuiInputBase-inputMultiline': {
-    whiteSpace: 'pre-wrap',
-    overflowWrap: 'anywhere',
-    wordBreak: 'break-word',
-  },
-}
+            <CustomTextArea
+              name="targetUser"
+              value={
+                credentialForm.targetUser
+              }
+              onChange={handleChange}
+              error={Boolean(
+                inputErrors.targetUser
+              )}
+              helperText={
+                inputErrors.targetUser
+              }
+              placeholder="組織ウォレットDIDを入力してください"
+              minRows={3}
+              maxRows={6}
+              inputProps={{
+                maxLength: 1024,
+              }}
+            />
+          </>
+        )}
+      </Stack>
 
-const requiredStyle = {
-  color: '#d63384',
-  paddingLeft: '3px',
-}
+      {/* 操作ボタン */}
+      <Stack
+        flex={{
+          xs: 1,
+          sm: 1,
+          lg: 1,
+          xl: 1,
+        }}
+        width={{
+          xs: '100%',
+          sm: '100%',
+          lg: 'auto',
+          xl: 'auto',
+        }}
+        direction="column"
+        justifyContent="flex-end"
+        alignItems={{
+          xs: 'stretch',
+          sm: 'stretch',
+          lg: 'flex-end',
+          xl: 'flex-end',
+        }}
+        spacing={2}
+      >
+        <CustomButton
+          onClick={handleAddUser}
+          label="追加"
+          disabled={
+            Boolean(
+              inputErrors.targetUser
+            ) ||
+            !credentialForm.targetUser
+          }
+          color="primary"
+          variant="contained"
+        />
 
-/**
- * 入力項目のラベル
- *
- * @param {Object} props プロパティ
- * @returns {JSX.Element} ラベル
- */
-export const TextFieldLabel = ({
-  title,
-  required = false,
-  ...others
-}) => (
-  <Typography
-    variant="subtitle1"
-    color="text.secondary"
-    gutterBottom
-    {...others}
-  >
-    {title}
+        <CustomFileUploaderButton
+          onChange={handleFileUpload}
+          name="csv"
+          label="アップロード"
+          accept=".csv"
+          color="primary"
+          variant="contained"
+        />
+      </Stack>
+    </Stack>
 
-    {required ? (
-      <span style={requiredStyle}>*</span>
-    ) : null}
-  </Typography>
-)
-
-/**
- * 1行入力用TextField
- *
- * @param {Object} props プロパティ
- * @returns {JSX.Element} TextField
- */
-export const CustomTextField = ({
-  value,
-  sx,
-  ...others
-}) => (
-  <TextField
-    value={value ?? ''}
-    fullWidth
-    variant="outlined"
-    {...others}
-    sx={{
-      ...textFieldStyles,
-      ...sx,
-    }}
-  />
-)
-
-/**
- * 複数行入力用TextField
- *
- * @param {Object} props プロパティ
- * @returns {JSX.Element} TextArea
- */
-export const CustomTextArea = ({
-  value,
-  minRows = 3,
-  maxRows = 6,
-  sx,
-  ...others
-}) => (
-  <TextField
-    value={value ?? ''}
-    multiline
-    minRows={minRows}
-    maxRows={maxRows}
-    fullWidth
-    variant="outlined"
-    {...others}
-    sx={{
-      ...textAreaStyles,
-      ...sx,
-    }}
-  />
-)
+    {/* CSVアップロード時のエラー表示 */}
+    {inputErrors.csv && (
+      <Stack>
+        <FormHelperText
+          error
+          sx={{ ml: 2 }}
+        >
+          {inputErrors.csv}
+        </FormHelperText>
+      </Stack>
+    )}
+  </Grid>
+)}
