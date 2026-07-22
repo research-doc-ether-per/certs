@@ -1,5 +1,1 @@
-組織Presentation Request URL一覧取得	getOrgPresentationRequestUrlList
-組織Presentation Request URL情報取得	getOrgPresentationRequestUrlInfo
-組織Presentation Request URL発行	issueOrgPresentationRequestUrl
-ID指定組織Presentation Request URL発行	issueOrgPresentationRequestUrlById
-組織受領可能証明書情報登録	registerOrgReceivableCredentialInfo
+
