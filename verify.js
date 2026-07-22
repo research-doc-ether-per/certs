@@ -1,45 +1,30 @@
 /**
- * 値が存在しない場合は null に変換する
+ * DB 取得行データをレスポンス用 object に変換する
  *
- * @param {*} value
- * 変換対象の値
- *
- * @returns {*}
- * 値が存在する場合は元の値を返却し、存在しない場合は null を返却する
- */
-const toNullIfEmpty = (value) => {
-  if (value === undefined || value === null || value === '') {
-    return null
-  }
-
-  return value
-}
-
-/**
- * DB 取得データをレスポンス用に変換する
- *
+ * DB の snake_case キーを camelCase に変換する。
  * createDate / updateDate は UTC Unix 形式に変換する。
  * 値が存在しない場合は null を設定する。
  *
- * @param {Object} data
- * DB 取得データ
+ * @param {Object} row
+ * DB 取得行データ
  *
  * @returns {Object}
- * 変換後のデータ
+ * レスポンス用に変換した object
  */
-const convertResponseData = (data = {}) => {
-  return Object.fromEntries(
-    Object.entries(data).map(([key, value]) => {
-      const convertedValue = toNullIfEmpty(value)
+const mapRow = (row) => {
+  const result = {}
 
-      if (key === 'createDate' || key === 'updateDate') {
-        return [
-          key,
-          convertedValue ? convertToUtcUnix(convertedValue) : null,
-        ]
-      }
+  for (const key in row) {
+    const camelKey = toCamel(key)
+    const value = toNullIfEmpty(row[key])
 
-      return [key, convertedValue]
-    })
-  )
+    if (camelKey === 'createDate' || camelKey === 'updateDate') {
+      result[camelKey] = value ? convertToUtcUnix(value) : null
+      continue
+    }
+
+    result[camelKey] = value
+  }
+
+  return result
 }
