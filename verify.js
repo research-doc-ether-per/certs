@@ -1,4 +1,25 @@
+/**
+ * URL から query string を除去する
+ *
+ * @param {string} url
+ * 対象 URL
+ *
+ * @returns {string | null}
+ * query string を除去した URL
+ */
+const removeQueryString = (url) => {
+  if (!url) {
+    return null
+  }
 
+  const queryIndex = url.indexOf('?')
+
+  if (queryIndex === -1) {
+    return url
+  }
+
+  return url.slice(0, queryIndex)
+}
 /**
  * Credential Offer Endpoint 名を取得する
  *
