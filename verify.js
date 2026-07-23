@@ -1,16 +1,20 @@
-
-# ルーターリスト
 titles:
-  header: Cloud Credential Service 個別Verifierサイト
+  header: Cloud Credential Service 個別Issuerサイト
 
-  presentationDetail: 受領済み証明書詳細
-  presentationList: 受領済み証明書一覧
+  offerUrlList: Credential Offer URL一覧
+  offerUrlDetail: Credential Offer URL詳細
 
-  presentationRequestUrlList: Presentation Request URL一覧
-  presentationRequestUrlDetail: Presentation Request URL詳細
+  issueOfferUrl: Credential Offer URL発行依頼
 
-  issuePresentationRequestUrl: Presentation Request URL発行依頼
-  issuePersonalPresentationRequestUrl: 個人Presentation Request URL発行依頼
-  issueOrgPresentationRequestUrl: 組織Presentation Request URL発行依頼
+  issueIndivOfferUrl: 個人Credential Offer URL発行①・・・証明内容確認
+  setIndivOfferTargets: 個人Credential Offer URL発行②・・・対象者設定
 
-  issuedPresentationRequestUrlConfirm: Presentation Request URL確認
+  issueOrgOfferUrl: 組織Credential Offer URL発行①・・・証明内容確認
+  setOrgOfferTargets: 組織Credential Offer URL発行②・・・組織ウォレット設定
+
+  offerUrlConfirm: Credential Offer URL確認
+
+  credentialContent: 証明内容
+
+  statusList: 状態リスト一覧
+  statusDetail: 状態リスト詳細
