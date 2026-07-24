@@ -1,19 +1,17 @@
 /**
- * Presentation Request URL 詳細レスポンスを生成する
+ * Presentation Request URL 一覧レスポンスを生成する
  *
  * @param {Object[]} datas DB 取得データ
  * @param {Object} options オプション
  * @param {string} options.targetKey targets に設定する項目名
  * @param {string[]} [options.additionalKeys=[]] 追加でレスポンスに含める項目名
- * @returns {Object} Presentation Request URL 詳細レスポンス
+ * @returns {Object} Presentation Request URL 一覧レスポンス
  */
-const createPresentationRequestUrlInfoResponse = (
+const createPresentationRequestUrlListResponse = (
   datas = [],
   { targetKey, additionalKeys = [] } = {}
 ) => {
-  const targetSet = new Set()
-  const targets = []
-  let baseInfo = null
+  const tempObj = new Map()
 
   for (const data of datas) {
     const {
@@ -30,8 +28,8 @@ const createPresentationRequestUrlInfoResponse = (
 
     const targetValue = data[targetKey]
 
-    if (!baseInfo) {
-      baseInfo = {
+    if (!tempObj.has(id)) {
+      const baseInfo = {
         id,
         groupId,
         presentationRequestUrl,
@@ -42,6 +40,7 @@ const createPresentationRequestUrlInfoResponse = (
         targets: [],
         updateDate,
         createDate,
+        _targetSet: new Set(),
       }
 
       for (const key of additionalKeys) {
@@ -49,19 +48,22 @@ const createPresentationRequestUrlInfoResponse = (
           baseInfo[key] = data[key]
         }
       }
+
+      tempObj.set(id, baseInfo)
     }
 
-    if (targetValue && !targetSet.has(targetValue)) {
-      targetSet.add(targetValue)
-      targets.push(targetValue)
+    const obj = tempObj.get(id)
+
+    if (targetValue && !obj._targetSet.has(targetValue)) {
+      obj._targetSet.add(targetValue)
+      obj.targets.push(targetValue)
     }
   }
 
-  if (!baseInfo) {
-    return {}
-  }
+  const list = Array.from(tempObj.values()).map((item) => {
+    delete item._targetSet
+    return item
+  })
 
-  baseInfo.targets = targets
-
-  return baseInfo
+  return { list }
 }
