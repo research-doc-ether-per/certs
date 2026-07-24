@@ -1,19 +1,19 @@
-
 /**
- * Presentation Request URL 一覧レスポンスを生成する
+ * Presentation Request URL 詳細レスポンスを生成する
  *
- * @param {Object[]} datas
- * DB 取得データ
- *
- * @param {string} targetKey
- * targets に設定する対象項目の key
- * 例: userId / orgWalletId
- *
- * @returns {Object}
- * Presentation Request URL 一覧レスポンス
+ * @param {Object[]} datas DB 取得データ
+ * @param {Object} options オプション
+ * @param {string} options.targetKey targets に設定する項目名
+ * @param {string[]} [options.additionalKeys=[]] 追加でレスポンスに含める項目名
+ * @returns {Object} Presentation Request URL 詳細レスポンス
  */
-const createPresentationRequestUrlListResponse = (datas = [], targetKey) => {
-  const tempObj = new Map()
+const createPresentationRequestUrlInfoResponse = (
+  datas = [],
+  { targetKey, additionalKeys = [] } = {}
+) => {
+  const targetSet = new Set()
+  const targets = []
+  let baseInfo = null
 
   for (const data of datas) {
     const {
@@ -24,15 +24,14 @@ const createPresentationRequestUrlListResponse = (datas = [], targetKey) => {
       type,
       format,
       name,
-      issuedByUserId,
       updateDate,
       createDate,
     } = data
 
     const targetValue = data[targetKey]
 
-    if (!tempObj.has(id)) {
-      tempObj.set(id, {
+    if (!baseInfo) {
+      baseInfo = {
         id,
         groupId,
         presentationRequestUrl,
@@ -40,26 +39,29 @@ const createPresentationRequestUrlListResponse = (datas = [], targetKey) => {
         type,
         format,
         name,
-        issuedByUserId,
         targets: [],
         updateDate,
         createDate,
-        _targetSet: new Set(),
-      })
+      }
+
+      for (const key of additionalKeys) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          baseInfo[key] = data[key]
+        }
+      }
     }
 
-    const obj = tempObj.get(id)
-
-    if (targetValue && !obj._targetSet.has(targetValue)) {
-      obj._targetSet.add(targetValue)
-      obj.targets.push(targetValue)
+    if (targetValue && !targetSet.has(targetValue)) {
+      targetSet.add(targetValue)
+      targets.push(targetValue)
     }
   }
 
-  const list = Array.from(tempObj.values()).map((item) => {
-    delete item._targetSet
-    return item
-  })
+  if (!baseInfo) {
+    return {}
+  }
 
-  return { list }
+  baseInfo.targets = targets
+
+  return baseInfo
 }
