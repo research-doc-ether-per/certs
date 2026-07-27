@@ -1,23 +1,22 @@
-
 /**
- * 組織 Wallet 認証用 password を postData に追加する
+ * Walt.id Wallet API のログインデータを準備する
  *
- * 組織ユーザの場合、DB から取得した password を postData に追加する。
- * 個人ユーザの場合は postData をそのまま返却する。
+ * 個人ユーザの場合は OIDC 認証用データをそのまま返却する。
+ * 組織ユーザの場合は、DB から取得した組織 Wallet 認証用 password を追加して返却する。
  *
  * @param {Object} params パラメータ
  * @param {string} params.realmName Keycloak Realm 名
  * @param {string} params.userId リクエスト用ユーザID
- * @param {Object} params.postData Walt.id Wallet API 認証用リクエストデータ
+ * @param {Object} params.waltIdLoginData Walt.id Wallet API 認証用リクエストデータ
  * @param {Object} walletDB Wallet DB
- * @returns {Promise<Object>} password 追加後の postData
+ * @returns {Promise<Object>} Walt.id Wallet API のログインデータ
  */
-const appendOrganizationWalletPassword = async (
-  { realmName, userId, postData },
+const prepareWaltIdWalletLoginData = async (
+  { realmName, userId, waltIdLoginData },
   walletDB
 ) => {
   if (realmName !== keycloak.allowedRealms.organization) {
-    return postData
+    return waltIdLoginData
   }
 
   const password = await getOrganizationWalletAuthPassword(
@@ -29,7 +28,7 @@ const appendOrganizationWalletPassword = async (
   )
 
   return {
-    ...postData,
+    ...waltIdLoginData,
     password,
   }
 }
