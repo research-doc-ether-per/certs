@@ -1,8 +1,15 @@
-  const { state, vpToken, userName, verifyResult } = requestBody
+const verifyResult = {
+  presentation,
+  credentials,
+}
 
-const response = await handlePost(url, accessToken, {
+await saveVpResult({
+  realmName,
+  groupId,
+  requestBody: {
     state,
-    vp_token: vpToken,
-    user_id: userName,
-    verify_result_string: JSON.stringify(verifyResult),
-  })
+    vpToken,
+    userName,
+    verifyResult,
+  },
+})
