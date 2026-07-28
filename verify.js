@@ -41,3 +41,10 @@ const resolvePresentationRequestInfo = async ({
     presentationDefinition,
   }
 }
+
+
+const { presentationDefinition } = await resolvePresentationRequestInfo({
+  walletId,
+  accessToken,
+  presentationUri: url,
+})
