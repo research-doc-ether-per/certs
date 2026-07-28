@@ -40,17 +40,21 @@ get("/callback") {
 **案1：Offer 発行 API に発行者情報を追加する方法**
 
 Offer 発行 API に発行者情報のパラメータ（例：`offerIssuer`）を追加し、Offer 発行時にその値を walt.id 側へ渡します。
+今回は確認用として、いったん `credentialSubject.credentialInformation` に `offerIssuer` を設定しています。
+
 その後、`/callback` 内で `currentPrincipal.accessToken` から取得した認証後のユーザー情報と比較します。
 
 比較コード例：
+
 ```kotlin
 val offerIssuer = session?.issuanceRequests?.firstOrNull()
-        ?.credentialData
-        ?.get("credentialSubject")?.jsonObject
-        ?.get("credentialInformation")?.jsonObject
-        ?.get("offerIssuer")?.jsonPrimitive?.contentOrNull
+    ?.credentialData
+    ?.get("credentialSubject")?.jsonObject
+    ?.get("credentialInformation")?.jsonObject
+    ?.get("offerIssuer")?.jsonPrimitive?.contentOrNull
+
 if (offerIssuer != null) {
-    val isOfferIssuerMatch = (preferredUsername == offerIssuer)
+    val isOfferIssuerMatch = preferredUsername == offerIssuer
     logger.info { "[offerIssuer Check] preferredUsername: '$preferredUsername' | offerIssuer: '$offerIssuer' | Match: $isOfferIssuerMatch" }
 } else {
     logger.info { "[offerIssuer Check] offerIssuer is not specified in session, skipping comparison" }
@@ -68,8 +72,9 @@ Offer 発行後、Offer 発行者情報を追加可能証明書一覧テーブ�
 
 ```kotlin
 val userHint = session?.authorizationRequest?.userHint
+
 if (userHint != null) {
-    val isUserHintMatch = (preferredUsername == userHint)
+    val isUserHintMatch = preferredUsername == userHint
     logger.info { "[userHint Check] preferredUsername: '$preferredUsername' | userHint: '$userHint' | Match: $isUserHintMatch" }
 } else {
     logger.info { "[userHint Check] userHint is not specified in session, skipping comparison" }
@@ -77,5 +82,3 @@ if (userHint != null) {
 ```
 
 案2のほうが改修範囲が小さく、実装しやすいと考えています。
-
-
