@@ -44,7 +44,11 @@ Offer 発行 API に発行者情報のパラメータ（例：`offerIssuer`）�
 
 比較コード例：
 ```kotlin
-val offerIssuer = session?.issuanceRequests?.firstOrNull()?.credentialSubject?.credentialInformation?.offerIssuer
+val offerIssuer = session?.issuanceRequests?.firstOrNull()
+        ?.credentials?.firstOrNull()?.credentialData?.get("credentialSubject")?.jsonObject
+        ?.get("offerIssuer")?.jsonPrimitive?.contentOrNull
+        ?: session?.issuanceRequests?.firstOrNull()
+            ?.credentialData?.get("offerIssuer")?.jsonPrimitive?.contentOrNull
 if (offerIssuer != null) {
     val isOfferIssuerMatch = (preferredUsername == offerIssuer)
     logger.info { "[offerIssuer Check] preferredUsername: '$preferredUsername' | offerIssuer: '$offerIssuer' | Match: $isOfferIssuerMatch" }
