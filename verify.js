@@ -1,2 +1,2 @@
-
-// credentialConstants.js
+// constants/
+//   credentialConstants.js
