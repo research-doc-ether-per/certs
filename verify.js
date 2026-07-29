@@ -1,33 +1,29 @@
-
 /**
- * VC JWT を検証・デコードする
- * デコードに失敗した場合は空の payload を返却する
+ * Walt.id から Credential JWT を取得する
  *
- * @param {string} credential VC JWT
- * @returns {Object} デコード結果
+ * @param {Object} params パラメータ
+ * @param {string} params.waltidCredentialId Walt.id Credential ID
+ * @param {Object} params.loginData Walt.id Wallet API ログインデータ
+ * @returns {Promise<string | null>} Credential JWT
  */
-const safeDecodeCredential = (credential) => {
-  try {
-    return validateAndDecodeVcJwt(credential)
-  } catch (error) {
-    logger.warn('error.message: ', error.message)
-    return { payload: {} }
+const getCredentialJwtFromWaltId = async ({
+  waltidCredentialId,
+  loginData,
+}) => {
+  if (!waltidCredentialId) {
+    return null
   }
+
+  const { certJwtData } = await getWaltidCredentials({
+    credentialId: waltidCredentialId,
+    ...loginData,
+  })
+
+  return certJwtData || null
 }
 
-/**
- * VC JWT を検証・デコードする
- *
- * デコードに失敗した場合は CertificateAddFailedError を返却する
- *
- * @param {string} credential VC JWT
- * @returns {Object} デコード結果
- */
-const decodeCredentialForAdd = (credential) => {
-  try {
-    return validateAndDecodeVcJwt(credential)
-  } catch (error) {
-    error.code = 'CertificateAddFailedError'
-    throw error
-  }
-}
+// Walt.id から証明書情報を取得
+const jwt = await getCredentialJwtFromWaltId({
+  waltidCredentialId,
+  loginData,
+})
