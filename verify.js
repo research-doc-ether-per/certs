@@ -1,34 +1,9 @@
-// src/config/permissionConfig.json
-// {
-//   "targetRealms": ["groupCertAuth"],
-//   "roleSeparator": "_",
-//   "permissionTypes": {
-//     "credentialReference": {
-//       "code": "r001",
-//       "description": "証明書参照"
-//     },
-//     "credentialAcquire": {
-//       "code": "r002",
-//       "description": "証明書取得"
-//     },
-//     "credentialPresentation": {
-//       "code": "r003",
-//       "description": "証明書提示"
-//     },
-//     "credentialDelete": {
-//       "code": "r004",
-//       "description": "証明書削除"
-//     }
-//   }
-// }
+// src/middleware/permission.js
 
+const log4js = require('log4js')
+const permissionConfig = require('../config/permissionConfig.json')
 
-const PERMISSION_TYPES = {
-  CREDENTIAL_REFERENCE: 'credentialReference',
-  CREDENTIAL_ACQUIRE: 'credentialAcquire',
-  CREDENTIAL_PRESENTATION: 'credentialPresentation',
-  CREDENTIAL_DELETE: 'credentialDelete',
-}
+const logger = log4js.getLogger('permission')
 
 /**
  * group tree に指定 groupId が存在するか確認する
@@ -61,7 +36,6 @@ const hasGroupInTree = (groupTree = {}, groupId) => {
   return true
 }
 
-
 /**
  * 権限確認対象 Realm か確認する
  *
@@ -83,8 +57,6 @@ const isPermissionTargetRealm = (realmName) => {
 const getPermissionCode = (permissionType) => {
   return permissionConfig.permissionTypes?.[permissionType]?.code || null
 }
-
-
 
 /**
  * 証明書操作権限を確認する
@@ -176,4 +148,9 @@ const checkPermission = (permissionType) => {
       logger.debug('*** checkPermission end ***')
     }
   }
+}
+
+module.exports = {
+  checkPermission,
+  hasGroupInTree,
 }
