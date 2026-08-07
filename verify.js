@@ -1,24 +1,32 @@
-import { getPermissionRolesFromToken } from '@/utils/permission-utils'
+React.useEffect(() => {
+  let timer
 
-const roles = getPermissionRolesFromToken(keycloak.tokenParsed)
+  if (!userId && roleTypes.corporate === userInfoRole) {
+    setError({ message: ERROR_MESSAGES.walletNotSelected })
 
-setUserInfo({
-  ...userInfo,
-  roles,
-})
+    timer = setTimeout(() => {
+      const currentPath = getBasePathByPathname(pathname)
+      router.replace(`${currentPath}${paths.wallets}`)
+    }, 2000)
 
+    return () => {
+      clearTimeout(timer)
+    }
+  }
 
-import { useMemo } from 'react'
-import { useUser } from '@/context/user-context'
-import { getCredentialPermissions } from '@/utils/permission-utils'
+  if (roleTypes.corporate === userInfoRole && !canReference) {
+    setError({
+      message: '選択中の組織ウォレットに対する証明書参照権限がありません。',
+    })
 
-const { userInfo, selectedGroup } = useUser()
+    return undefined
+  }
 
-const permissions = useMemo(() => {
-  return getCredentialPermissions({
-    roles: userInfo?.roles || [],
-    groupId: selectedGroup?.groupId,
-  })
-}, [userInfo?.roles, selectedGroup?.groupId])
+  initialize()
 
-const { canReference, canAcquire, canPresent, canDelete } = permissions
+  return () => {
+    if (timer) {
+      clearTimeout(timer)
+    }
+  }
+}, [userId, userInfoRole, canReference, pathname, router])
