@@ -1,38 +1,7 @@
-AuthenticationMethod.PWD -> {
-    val redirectUri = authReq.redirectUri ?: ""
-    
-    val targetType = when {
-        redirectUri.contains("corporate", ignoreCase = true) -> "corporate"
-        redirectUri.contains("individual", ignoreCase = true) -> "individual"
-        else -> throw AuthorizationError(
-            authorizationRequest = authReq,
-            errorCode = AuthorizationErrorCode.invalid_request,
-            message = "Invalid redirectUri: Must specify 'individual' or 'corporate' for authentication service"
-        )
-    }
+今回の確認結果として、Pool 自体は再作成せず、API 起動時に作成した単一の Pool を継続して使用する方針としています。
 
-    call.response.apply {
-        status(HttpStatusCode.Found)
-        header(
-            name = HttpHeaders.Location,
-            value = "${metadata.issuer}/external_login/$targetType/${authReq.toHttpQueryString()}"
-        )
-    }
-    return@get
-}
+DB 停止時に実行中だったクエリやトランザクションは一度エラーになりますが、無効になった Client は Pool から削除されます。
+DB 復旧後は、同じ Pool から新しい Client が作成されるため、その後に新しく実行する通常のクエリやトランザクションは正常に処理できます。
 
 
-} catch (authExc: AuthorizationError) { 
-        logger.error(authExc) { "Authorization error: " }
-        call.response.apply {
-            status(HttpStatusCode.Found)
-            header(
-                name = HttpHeaders.Location,
-                value = URLBuilder(authExc.authorizationRequest.redirectUri!!).apply {
-                    parameters.appendAll(
-                        parametersOf(authExc.toAuthorizationErrorResponse().toHttpParameters())
-                    )
-                }.buildString()
-            )
-        }
-    }
+設定ファイル内に ssl の設定が見当たらなかったため削除していましたが、追加するように対応します。
