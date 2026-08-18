@@ -1,25 +1,4 @@
 /**
- * path から値を取得する
- *
- * @param {Object} target 対象 object
- * @param {string[]} path 取得対象 path
- * @returns {*} 取得値
- */
-const getValueByPath = (target = {}, path = []) => {
-  if (!target || !Array.isArray(path) || path.length === 0) {
-    return undefined
-  }
-
-  return path.reduce((current, key) => {
-    if (current === null || current === undefined) {
-      return undefined
-    }
-
-    return current[key]
-  }, target)
-}
-
-/**
  * path に従って object に値を設定する
  *
  * @param {Object} target 設定対象 object
@@ -50,43 +29,121 @@ const setValueByPath = (target, path = [], value) => {
 }
 
 /**
- * metadata claims から指定 key の path を取得する
+ * path に従って object の値を削除する
  *
- * @param {Object[]} claims Credential Metadata claims
- * @param {string} targetKey 取得対象 key
- * @returns {string[]|null} path
+ * @param {Object} target 削除対象 object
+ * @param {string[]} path 削除対象 path
  */
-const getClaimPathByKey = (claims = [], targetKey) => {
-  if (!Array.isArray(claims) || !targetKey) {
-    return null
+const deleteValueByPath = (target, path = []) => {
+  if (!target || !Array.isArray(path) || path.length === 0) {
+    return
   }
 
-  const claim = claims.find((item) => {
-    const path = item?.path
+  let current = target
 
-    if (!Array.isArray(path) || path.length === 0) {
-      return false
+  for (let index = 0; index < path.length - 1; index++) {
+    current = current?.[path[index]]
+
+    if (!current || typeof current !== 'object') {
+      return
     }
+  }
 
-    return path[path.length - 1] === targetKey
-  })
-
-  return claim?.path || null
+  delete current[path[path.length - 1]]
 }
 
-const credentialMetadata =
-  supportedCredentialTypes?.[credentialConfigurationId]?.credential_metadata
 
-const claims = credentialMetadata?.claims || []
+/**
+ * Credential Offer 発行用 payload を生成する
+ *
+ * metadata claims の path に従って、発行日時、有効期限、docId を credentialData に設定する。
+ *
+ * @param {Object} params パラメータ
+ * @param {string} params.issuerKey Issuer key
+ * @param {string} params.issuerDid Issuer DID
+ * @param {Object} params.offerData Offer data
+ * @param {string} params.issuanceDate 発行日時
+ * @param {string|null} params.expirationDate 有効期限
+ * @param {string[]} params.issuanceDatePath 発行日時 path
+ * @param {string[]} params.expirationDatePath 有効期限 path
+ * @param {string} params.docId ドキュメントID
+ * @param {string[]} params.docIdPath ドキュメントID path
+ * @param {string} params.format Credential format
+ * @returns {Object} 共通 payload
+ */
+const prepareCredentialOfferPayload = ({
+  issuerKey,
+  issuerDid,
+  offerData,
+  issuanceDate,
+  expirationDate,
+  issuanceDatePath,
+  expirationDatePath,
+  docId,
+  docIdPath,
+  format,
+}) => {
+  const {
+    credentialConfigurationId,
+    credentialData,
+    selectiveDisclosure,
+    authenticationMethod,
+  } = offerData
 
-const expirationDatePath = getClaimPathByKey(claims, 'expirationDate')
-const issuanceDatePath = getClaimPathByKey(claims, 'issuanceDate')
+  let payload = {
+    issuerKey,
+    issuerDid,
+    credentialConfigurationId,
+    credentialData: {
+      '@context': ctxByFormat[format],
+      ...credentialData,
+      type: ['VerifiableCredential', credentialData?.type],
+    },
+    standardVersion: 'DRAFT13',
+    authenticationMethod,
+  }
 
-const inputExpirationDate = getValueByPath(
-  credentialData,
-  expirationDatePath
-)
+  // 発行日時を metadata claims の path に従って設定する
+  if (issuanceDate && Array.isArray(issuanceDatePath)) {
+    setValueByPath(payload.credentialData, issuanceDatePath, issuanceDate)
+  }
 
-const { issuanceDate, expirationDate } = prepareCredentialDates(
-  inputExpirationDate
-)
+  // 有効期限を metadata claims の path に従って設定する
+  if (expirationDate && Array.isArray(expirationDatePath)) {
+    setValueByPath(payload.credentialData, expirationDatePath, expirationDate)
+  }
+
+  // 有効期限が指定されていない場合は、metadata claims の path に従って削除する
+  if (!expirationDate && Array.isArray(expirationDatePath)) {
+    deleteValueByPath(payload.credentialData, expirationDatePath)
+  }
+
+  // docId を metadata claims の path に従って設定する
+  if (docId && Array.isArray(docIdPath)) {
+    setValueByPath(payload.credentialData, docIdPath, docId)
+  }
+
+  switch (format) {
+    case FORMAT_TYPES.VC_JWT:
+      payload = {
+        ...payload,
+      }
+      break
+
+    case FORMAT_TYPES.VC_SD_JWT:
+      payload = {
+        ...payload,
+        selectiveDisclosure,
+      }
+      break
+
+    default: {
+      const error = new Error(`Unsupported credential format. format: ${format}`)
+      error.code = 'InvalidParamsError'
+      error.params = [format]
+      throw error
+    }
+  }
+
+  return payload
+}
