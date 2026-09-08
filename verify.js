@@ -1,8 +1,1 @@
-FROM eclipse-temurin:17-jre
-WORKDIR /app
-
-COPY build/libs/waltid-issuer-api-all.jar app.jar
-
-EXPOSE 7002
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
+今、Gradle でビルドを試しているんですが、時間がかかりそうです。もしお急ぎでしたら、先にこの部分をマージして、AWS 環境で動作確認してもいいでしょうか。
