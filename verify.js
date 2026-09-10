@@ -1,1 +1,3 @@
-https://docs.walt.id/community-stack/wallet2/configurations/config-files/auth
+確かに、現行と同じように Wallet API を外部公開せず、前段のシステム側で認証・アクセス制御を行うのであれば、Wallet2 側の認証機能を使わない構成も選択肢になりそうですね。
+その場合は、Wallet2 側の認証機能の利用方法だけではなく、walletId の管理方法や、前段システムから各 Wallet へのアクセス制御をどのように行うかも確認したほうがよさそうです。
+Sample を作成する際に、Wallet2 側の認証を使う場合／使わない場合の両方を確認してみます。
