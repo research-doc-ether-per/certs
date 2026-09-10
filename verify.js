@@ -1,106 +1,103 @@
-// setup-wallet2-auth.js
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-
-const wallet2ConfigDir = path.resolve(
-  __dirname,
-  "../waltid-services/waltid-wallet-api2/config"
-);
-
-const authConfPath = path.join(wallet2ConfigDir, "auth.conf");
-const featuresConfPath = path.join(wallet2ConfigDir, "_features.conf");
+const {
+  walletApi2,
+  handleGet,
+  handlePost,
+} = require('./fetch-service')
 
 /**
- * auth.conf を生成する
+ * Wallet2 Account 登録
+ *
+ * @param {string} email
+ * @param {string} password
  */
-function generateAuthConf() {
-  if (fs.existsSync(authConfPath)) {
-    console.log(`auth.conf already exists: ${authConfPath}`);
-    return;
-  }
+const registerAccount = async (email, password) => {
+  const response = await handlePost(
+    walletApi2,
+    '/auth/register',
+    null,
+    {
+      email,
+      password,
+    }
+  )
 
-  const { privateKey } = crypto.generateKeyPairSync("ec", {
-    namedCurve: "prime256v1",
-  });
-
-  const jwk = privateKey.export({
-    format: "jwk",
-  });
-
-  const authConf = `# Wallet2 の認証機能で使用する JWT Session Token の署名・検証用 Key
-signingKey = {
-  type = "jwk"
-
-  jwk = {
-    kty = "${jwk.kty}"
-    crv = "${jwk.crv}"
-    x = "${jwk.x}"
-    y = "${jwk.y}"
-    d = "${jwk.d}"
-  }
-}
-
-# Session Token の有効期限（24時間）
-tokenExpiry = "PT24H"
-`;
-
-  fs.writeFileSync(authConfPath, authConf, "utf8");
-
-  console.log(`auth.conf generated: ${authConfPath}`);
+  return response.data
 }
 
 /**
- * _features.conf の enabledFeatures に auth を追加する
+ * Wallet2 Login
+ *
+ * @param {string} email
+ * @param {string} password
  */
-function enableAuthFeature() {
-  if (!fs.existsSync(featuresConfPath)) {
-    throw new Error(`_features.conf not found: ${featuresConfPath}`);
-  }
+const login = async (email, password) => {
+  const response = await handlePost(
+    walletApi2,
+    '/auth/emailpass',
+    null,
+    {
+      email,
+      password,
+    }
+  )
 
-  let content = fs.readFileSync(featuresConfPath, "utf8");
-
-  // auth が既に設定されている場合は何もしない
-  const enabledFeaturesMatch = content.match(
-    /enabledFeatures\s*=\s*\[([\s\S]*?)\]/
-  );
-
-  if (!enabledFeaturesMatch) {
-    throw new Error("enabledFeatures was not found in _features.conf");
-  }
-
-  const featuresContent = enabledFeaturesMatch[1];
-
-  if (/\bauth\b/.test(featuresContent)) {
-    console.log("auth feature is already enabled.");
-    return;
-  }
-
-  const updatedFeaturesContent =
-    featuresContent.replace(/\s*$/, "") + "\n    auth\n";
-
-  content = content.replace(
-    enabledFeaturesMatch[0],
-    `enabledFeatures = [${updatedFeaturesContent}]`
-  );
-
-  fs.writeFileSync(featuresConfPath, content, "utf8");
-
-  console.log("auth feature added to _features.conf.");
+  return response.data
 }
 
 /**
- * Wallet2 Authentication Setup
+ * Login Account 情報取得
+ *
+ * @param {string} accessToken
  */
-function main() {
-  fs.mkdirSync(wallet2ConfigDir, {
-    recursive: true,
-  });
+const getAccount = async (accessToken) => {
+  const response = await handleGet(
+    walletApi2,
+    '/auth/account',
+    accessToken
+  )
 
-  generateAuthConf();
-  enableAuthFeature();
-
-  console.log("Wallet2 auth setup completed.");
+  return response.data
 }
 
-main();
+/**
+ * Account が所有する Wallet 一覧取得
+ *
+ * @param {string} accessToken
+ */
+const getAccountWallets = async (accessToken) => {
+  const response = await handleGet(
+    walletApi2,
+    '/auth/account/wallets',
+    accessToken
+  )
+
+  return response.data
+}
+
+/**
+ * Wallet 作成
+ *
+ * @param {string} accessToken
+ * @param {object} params
+ */
+const createWallet = async (
+  accessToken,
+  params = {}
+) => {
+  const response = await handlePost(
+    walletApi2,
+    '/wallet',
+    accessToken,
+    params
+  )
+
+  return response.data
+}
+
+module.exports = {
+  registerAccount,
+  login,
+  getAccount,
+  getAccountWallets,
+  createWallet,
+}
