@@ -1,37 +1,59 @@
 
-## 7.1 Wallet2 関連ツール
+Wallet2 の Persistence では、SQLite または PostgreSQL を使用できます。
 
-Wallet2 v1.0.0 の認証、Persistence、Wallet、Key、DID などの機能について、セットアップおよび一連の動作確認を行うため、以下のツールを作成しました。
+使用する DB は `wallet2-persistence.conf` の JDBC 接続設定によって切り替えます。
 
-| ファイル名 | 説明 |
-|---|---|
-| `wallet2-auth-on.js` | Wallet2 の `auth` 機能を有効化し、認証に必要な設定を行います。 |
-| `wallet2-auth-off.js` | Wallet2 の `auth` 機能を無効化します。 |
-| `wallet2-persistence-change.js` | Wallet2 の Persistence 設定を切り替えます。`postgres` を指定した場合は PostgreSQL、`sqlite` を指定した場合は SQLite に変更します。 |
-| `wallet2-scenario-with-auth.js` | `auth` 機能を有効化した状態で、ユーザー登録から Wallet、Key、DID の作成・確認・削除までの一連の処理を行います。 |
-| `wallet2-scenario-without-auth.js` | `auth` 機能を無効化した状態で、Wallet、Key、DID の作成・確認・削除までの一連の処理を行います。 |
+#### 2.2.1 SQLite を使用する場合
 
+`wallet2-persistence.conf` を変更していない場合、または JDBC 接続設定を SQLite に戻した場合は、SQLite が使用されます。
 
-  ### Persistence 設定を切り替えて確認する場合
+SQLite の DB ファイルは Wallet API2 コンテナ内の `wallet2.db` に作成されます。
 
 ```bash
-# PostgreSQL に切り替える場合
-node wallet2-persistence-change.js postgres
+# sqlite3 のインストール
+cd ~/
+sudo apt update
+sudo apt install sqlite3
 
-# SQLite に切り替える場合
-node wallet2-persistence-change.js sqlite
+# Wallet API2 コンテナから DB ファイルを取得
+cd ~/workspace/cloudcredentialservice
+docker cp docker-compose-wallet-api2-1:/waltid-wallet-api2/data/wallet2.db ./wallet2.db
 
-# Persistence 設定変更後、walt.id を再起動する
+# テーブル一覧の確認
+sqlite3 wallet2.db ".tables" --newline
 
-# `auth` 機能を使用する場合
-node wallet2-scenario-with-auth.js
+# テーブル構造のエクスポート
+sqlite3 wallet2.db ".schema" > wallet2_sqlite_schema.sql
 
-# `auth` 機能を使用しない場合
-node wallet2-scenario-without-auth.js
+# テーブルデータのエクスポート
+sqlite3 wallet2.db ".dump --data-only" > wallet2_sqlite_dump.sql
 ```
 
+#### 2.2.2 PostgreSQL を使用する場合
 
-また、Persistence の設定を変更することで、保存先を PostgreSQL に切り替えられることを確認しました。
-PostgreSQL を使用する場合は、`wallet2-persistence.conf` の JDBC 接続設定を PostgreSQL 用に変更し、Wallet API を再起動します。
-切り替え後、PostgreSQL 側に Wallet2 用のテーブルが自動作成され、Wallet、Key、DID などのデータが PostgreSQL に保存されることを確認しました。
-SQLite に戻す場合も、同じ設定ファイルを SQLite 用に変更することで切り替え可能です。
+`wallet2-persistence.conf` の JDBC 接続設定を PostgreSQL 用に変更し、Wallet API2 を再起動すると PostgreSQL が使用されます。
+
+Wallet2 の Persistence 初期化時に、必要なテーブルが PostgreSQL 上に自動作成されます。
+
+以下のコマンドで、テーブル構造およびデータを確認できます。
+```bash
+# テーブルデータのエクスポート
+PGPASSWORD='waltid' docker exec -i docker-compose-postgres-1 \
+  pg_dump -U waltid -d waltid --data-only --inserts \
+  > ./wallet2_postgres_dump.sql
+
+# テーブル構造のエクスポート
+PGPASSWORD='waltid' docker exec -i docker-compose-postgres-1 \
+  pg_dump -U waltid -d waltid --schema-only \
+  > ./wallet2_postgres_schema.sql
+
+# PostgreSQL に接続
+docker exec -e PGPASSWORD=waltid -it docker-compose-postgres-1 \
+  psql -U waltid -d waltid
+
+# テーブル一覧の確認
+\dt
+```
+#### 2.2.3 テーブル一覧
+
+SQLite / PostgreSQL ともに、Wallet2 Persistence では以下のテーブルが作成されます。
