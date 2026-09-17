@@ -1,31 +1,22 @@
+logger.debug(
+  '発行された Credential の詳細を確認します。'
+)
 
-/**
- * Credential の詳細を取得する。
- */
-const getCredential = async (
-  walletId,
-  credentialId,
-  accessToken = null
-) => {
-  logger.debug('*** getCredential start ***')
+const credentialDetails = []
 
-  try {
-    const response = await fetchService.handleGet(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/${credentialId}`,
-      accessToken
+for (const credentialId of credentialIds) {
+  const credential =
+    await wallet2Service.getCredential(
+      walletId,
+      credentialId
     )
 
-    const result = response.data || {}
+  logger.debug(
+    `Credential 詳細: ${credentialId}`
+  )
+  logger.debug(
+    JSON.stringify(credential, null, 2)
+  )
 
-    logger.debug('result : ', result)
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** getCredential end ***')
-  }
+  credentialDetails.push(credential)
 }
