@@ -160,12 +160,14 @@ const fetchCredential = async (
   walletId,
   {
     credentialEndpoint,
-    accessToken: credentialAccessToken,
+    credentialAccessToken,
     credentialConfigurationId,
     proofJwt = null,
     clientId = 'eudiw-abca',
     storeInWallet = true,
     credentialIssuerBaseUrl = null,
+    metadata = null,
+    label = null,
   },
   accessToken = null
 ) => {
@@ -187,6 +189,14 @@ const fetchCredential = async (
     if (credentialIssuerBaseUrl) {
       params.credentialIssuerBaseUrl =
         credentialIssuerBaseUrl
+    }
+
+    if (metadata) {
+      params.metadata = metadata
+    }
+
+    if (label) {
+      params.label = label
     }
 
     logger.debug('params : ', params)
@@ -213,13 +223,6 @@ const fetchCredential = async (
 }
 
 
- // 追加
-  requestCredentialToken,
-  requestCredentialNonce,
-  signCredentialProof,
-  fetchCredential,
-
-
 const issuer2Service = require('./services/issuer2-service')
 const wallet2Service = require('./services/wallet2-service')
 const logger = require('./utils/logger')
@@ -228,13 +231,10 @@ const WALLET_ID = 'Wallet IDを指定'
 const HOLDER_DID = 'Holder DIDを指定'
 const HOLDER_KEY_ID = 'Holder Key IDを指定'
 
-const CLIENT_ID = 'eudiw-abca'
-
 const credentialMap = {
   Awards_jwt_vc_json: {
     credentialData: {
       credentialSubject: {
-        id: HOLDER_DID,
         given_name: 'Taro',
         family_name: 'Yamada',
         degree: 'Bachelor of Science',
@@ -246,7 +246,6 @@ const credentialMap = {
   Awards: {
     credentialData: {
       credentialSubject: {
-        id: HOLDER_DID,
         given_name: 'Taro',
         family_name: 'Yamada',
         degree: 'Bachelor of Science',
@@ -270,6 +269,11 @@ const checkCredentialProfile = async (profileId) => {
       `Credential Profile が存在しません: ${profileId}`
     )
   }
+
+  logger.debug(
+    'Credential Profile : ',
+    JSON.stringify(profile, null, 2)
+  )
 
   return profile
 }
@@ -298,6 +302,26 @@ const createCredentialOffer = async (
   if (credentialConfig.selectiveDisclosure) {
     params.selectiveDisclosure =
       credentialConfig.selectiveDisclosure
+  }
+
+  if (credentialConfig.issuerDid) {
+    params.issuerDid =
+      credentialConfig.issuerDid
+  }
+
+  if (credentialConfig.issuerKey) {
+    params.issuerKey =
+      credentialConfig.issuerKey
+  }
+
+  if (credentialConfig.mapping) {
+    params.mapping =
+      credentialConfig.mapping
+  }
+
+  if (credentialConfig.x5Chain) {
+    params.x5Chain =
+      credentialConfig.x5Chain
   }
 
   const offer =
@@ -367,12 +391,6 @@ const requestToken = async (
 
         credentialIssuer:
           offerDetail.credentialIssuer,
-
-        clientId:
-          CLIENT_ID,
-
-        anonymousPreAuthorizedCode:
-          false,
       }
     )
 
@@ -414,6 +432,7 @@ const requestNonce = async (
 }
 
 /**
+ * Holder Key と Holder DID を使用して
  * Credential Proof を生成します。
  */
 const signProof = async (
@@ -429,6 +448,12 @@ const signProof = async (
   if (!credentialConfigurationId) {
     throw new Error(
       'credentialConfigurationId が取得できません。'
+    )
+  }
+
+  if (!offerDetail.credentialIssuer) {
+    throw new Error(
+      'credentialIssuer が取得できません。'
     )
   }
 
@@ -461,7 +486,8 @@ const signProof = async (
 }
 
 /**
- * Credential を取得します。
+ * Access Token と Credential Proof を使用して
+ * Credential を取得し、Wallet2 に保存します。
  */
 const fetchCredential = async (
   walletId,
@@ -477,6 +503,12 @@ const fetchCredential = async (
   if (!credentialConfigurationId) {
     throw new Error(
       'credentialConfigurationId が取得できません。'
+    )
+  }
+
+  if (!offerDetail.credentialEndpoint) {
+    throw new Error(
+      'credentialEndpoint が取得できません。'
     )
   }
 
@@ -499,16 +531,13 @@ const fetchCredential = async (
         credentialEndpoint:
           offerDetail.credentialEndpoint,
 
-        accessToken:
+        credentialAccessToken:
           tokenResult.accessToken,
 
         credentialConfigurationId,
 
         proofJwt:
           proofResult.proofJwt,
-
-        clientId:
-          CLIENT_ID,
 
         storeInWallet:
           true,
@@ -527,7 +556,7 @@ const fetchCredential = async (
 }
 
 /**
- * Credential の発行処理を実行します。
+ * Credential を発行します。
  */
 const issueCredential = async (
   profileId,
@@ -621,6 +650,11 @@ const main = async () => {
 
     for (const [profileId, credentialConfig] of
       Object.entries(credentialMap)) {
+      logger.debug(
+        'Credential 発行処理を開始します。: ',
+        profileId
+      )
+
       const result =
         await issueCredential(
           profileId,
