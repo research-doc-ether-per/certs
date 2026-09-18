@@ -1,228 +1,5 @@
-/**
- * Pre-Authorized Code を Access Token に交換します。
- */
-const requestCredentialToken = async (
-  walletId,
-  {
-    tokenEndpoint,
-    preAuthorizedCode,
-    credentialIssuer = null,
-    txCode = null,
-    clientId = 'eudiw-abca',
-    redirectUri = 'openid://',
-    tokenRequestHeaders = {},
-    anonymousPreAuthorizedCode = false,
-  },
-  accessToken = null
-) => {
-  logger.debug('*** requestCredentialToken start ***')
-
-  try {
-    const params = {
-      tokenEndpoint,
-      preAuthorizedCode,
-      clientId,
-      redirectUri,
-      tokenRequestHeaders,
-      anonymousPreAuthorizedCode,
-    }
-
-    if (credentialIssuer) {
-      params.credentialIssuer = credentialIssuer
-    }
-
-    if (txCode) {
-      params.txCode = txCode
-    }
-
-    logger.debug('params : ', params)
-
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/receive/request-token`,
-      accessToken,
-      params
-    )
-
-    const result = response.data || {}
-
-    logger.debug('result : ', result)
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** requestCredentialToken end ***')
-  }
-}
-
-/**
- * Credential Proof 用の Nonce を取得します。
- */
-const requestCredentialNonce = async (
-  walletId,
-  credentialIssuer,
-  accessToken = null
-) => {
-  logger.debug('*** requestCredentialNonce start ***')
-
-  try {
-    const params = {
-      credentialIssuer,
-    }
-
-    logger.debug('params : ', params)
-
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/receive/request-nonce`,
-      accessToken,
-      params
-    )
-
-    const result = response.data || {}
-
-    logger.debug('result : ', result)
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** requestCredentialNonce end ***')
-  }
-}
-
-/**
- * Credential Proof を生成します。
- */
-const signCredentialProof = async (
-  walletId,
-  {
-    issuerUrl,
-    credentialConfigurationId,
-    nonce = null,
-    keyId = null,
-    did = null,
-  },
-  accessToken = null
-) => {
-  logger.debug('*** signCredentialProof start ***')
-
-  try {
-    const params = {
-      issuerUrl,
-      credentialConfigurationId,
-    }
-
-    if (nonce) {
-      params.nonce = nonce
-    }
-
-    if (keyId) {
-      params.keyId = keyId
-    }
-
-    if (did) {
-      params.did = did
-    }
-
-    logger.debug('params : ', params)
-
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/receive/sign-proof`,
-      accessToken,
-      params
-    )
-
-    const result = response.data || {}
-
-    logger.debug('result : ', result)
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** signCredentialProof end ***')
-  }
-}
-
-/**
- * Issuer から Credential を取得します。
- */
-const fetchCredential = async (
-  walletId,
-  {
-    credentialEndpoint,
-    credentialAccessToken,
-    credentialConfigurationId,
-    proofJwt = null,
-    clientId = 'eudiw-abca',
-    storeInWallet = true,
-    credentialIssuerBaseUrl = null,
-    metadata = null,
-    label = null,
-  },
-  accessToken = null
-) => {
-  logger.debug('*** fetchCredential start ***')
-
-  try {
-    const params = {
-      credentialEndpoint,
-      accessToken: credentialAccessToken,
-      credentialConfigurationId,
-      clientId,
-      storeInWallet,
-    }
-
-    if (proofJwt) {
-      params.proofJwt = proofJwt
-    }
-
-    if (credentialIssuerBaseUrl) {
-      params.credentialIssuerBaseUrl =
-        credentialIssuerBaseUrl
-    }
-
-    if (metadata) {
-      params.metadata = metadata
-    }
-
-    if (label) {
-      params.label = label
-    }
-
-    logger.debug('params : ', params)
-
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/receive/fetch-credential`,
-      accessToken,
-      params
-    )
-
-    const result = response.data || {}
-
-    logger.debug('result : ', result)
-
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** fetchCredential end ***')
-  }
-}
-
-
+const fs = require('fs')
+const path = require('path')
 const issuer2Service = require('./services/issuer2-service')
 const wallet2Service = require('./services/wallet2-service')
 const logger = require('./utils/logger')
@@ -230,6 +7,14 @@ const logger = require('./utils/logger')
 const WALLET_ID = 'Wallet IDを指定'
 const HOLDER_DID = 'Holder DIDを指定'
 const HOLDER_KEY_ID = 'Holder Key IDを指定'
+
+const CLIENT_ID = 'wallet-web'
+const REDIRECT_URI = 'http://10.0.2.15:6101'
+
+const OUTPUT_PATH = path.join(
+  __dirname,
+  '../output/authorization-code-step-by-step-details.json'
+)
 
 const credentialMap = {
   Awards_jwt_vc_json: {
@@ -279,7 +64,7 @@ const checkCredentialProfile = async (profileId) => {
 }
 
 /**
- * Pre-Authorized Code Flow 用の Credential Offer を作成します。
+ * Authorization Code Flow 用の Credential Offer を作成します。
  */
 const createCredentialOffer = async (
   profileId,
@@ -290,7 +75,7 @@ const createCredentialOffer = async (
   const params = {
     profileId,
     authMethod:
-      issuer2Service.AUTH_METHOD.PRE_AUTHORIZED,
+      issuer2Service.AUTH_METHOD.AUTHORIZATION_CODE,
     valueMode: 'BY_REFERENCE',
   }
 
@@ -359,38 +144,85 @@ const resolveCredentialOffer = async (
 }
 
 /**
- * Pre-Authorized Code を使用して Access Token を取得します。
+ * Authorization URL を生成します。
  */
-const requestToken = async (
+const generateAuthorizationUrl = async (
   walletId,
-  offerDetail
+  credentialOffer
 ) => {
-  logger.debug('Access Token を取得します。')
+  logger.debug('Authorization URL を生成します。')
 
-  if (!offerDetail.tokenEndpoint) {
+  const result =
+    await wallet2Service.generateAuthorizationUrl(
+      walletId,
+      {
+        offerUrl: credentialOffer,
+        clientId: CLIENT_ID,
+        redirectUri: REDIRECT_URI,
+        usePkce: true,
+        useScope: false,
+      }
+    )
+
+  logger.debug(
+    'Authorization URL 生成結果 : ',
+    JSON.stringify(result, null, 2)
+  )
+
+  return result
+}
+
+/**
+ * Authorization Code を Access Token に交換します。
+ */
+const exchangeAuthorizationCode = async (
+  walletId,
+  details
+) => {
+  logger.debug('Authorization Code を Access Token に交換します。')
+
+  const callback = details.callback
+  const authorizationResult = details.authorizationResult
+
+  if (!callback?.code) {
     throw new Error(
-      'tokenEndpoint が取得できません。'
+      'Authorization Code が設定されていません。'
     )
   }
 
-  if (!offerDetail.preAuthorizedCode) {
+  if (!callback?.state) {
     throw new Error(
-      'preAuthorizedCode が取得できません。'
+      'Callback の state が設定されていません。'
+    )
+  }
+
+  if (
+    callback.state !==
+    authorizationResult.state
+  ) {
+    throw new Error(
+      'Callback の state が一致しません。'
     )
   }
 
   const result =
-    await wallet2Service.requestCredentialToken(
+    await wallet2Service.exchangeAuthorizationCode(
       walletId,
       {
-        tokenEndpoint:
-          offerDetail.tokenEndpoint,
+        code:
+          callback.code,
 
-        preAuthorizedCode:
-          offerDetail.preAuthorizedCode,
+        credentialIssuerBaseUrl:
+          authorizationResult.credentialIssuerBaseUrl,
 
-        credentialIssuer:
-          offerDetail.credentialIssuer,
+        codeVerifier:
+          authorizationResult.codeVerifier,
+
+        clientId:
+          CLIENT_ID,
+
+        redirectUri:
+          REDIRECT_URI,
       }
     )
 
@@ -539,6 +371,9 @@ const fetchCredential = async (
         proofJwt:
           proofResult.proofJwt,
 
+        clientId:
+          CLIENT_ID,
+
         storeInWallet:
           true,
 
@@ -556,17 +391,77 @@ const fetchCredential = async (
 }
 
 /**
- * Credential を発行します。
+ * Authorization Code Flow の継続情報を保存します。
  */
-const issueCredential = async (
-  profileId,
-  credentialConfig
-) => {
-  logger.debug('*** issueCredential start ***')
+const saveDetails = (details) => {
+  const outputDir = path.dirname(OUTPUT_PATH)
+
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(
+      outputDir,
+      {
+        recursive: true,
+      }
+    )
+  }
+
+  fs.writeFileSync(
+    OUTPUT_PATH,
+    JSON.stringify(details, null, 2),
+    'utf8'
+  )
+
+  logger.debug(
+    '継続情報を保存しました。: ',
+    OUTPUT_PATH
+  )
+}
+
+/**
+ * Authorization Code Flow の継続情報を読み込みます。
+ */
+const loadDetails = () => {
+  if (!fs.existsSync(OUTPUT_PATH)) {
+    throw new Error(
+      `継続情報ファイルが存在しません: ${OUTPUT_PATH}`
+    )
+  }
+
+  return JSON.parse(
+    fs.readFileSync(
+      OUTPUT_PATH,
+      'utf8'
+    )
+  )
+}
+
+/**
+ * Credential Offer を作成し、
+ * Authorization URL を取得します。
+ */
+const getOfferDetails = async () => {
+  logger.debug('*** getOfferDetails start ***')
 
   try {
+    const profileIds =
+      Object.keys(credentialMap)
+
+    if (profileIds.length !== 1) {
+      throw new Error(
+        'Authorization Code Flow の確認では、credentialMap に Credential Profile を1件だけ指定してください。'
+      )
+    }
+
+    const profileId =
+      profileIds[0]
+
+    const credentialConfig =
+      credentialMap[profileId]
+
     const profile =
-      await checkCredentialProfile(profileId)
+      await checkCredentialProfile(
+        profileId
+      )
 
     const offer =
       await createCredentialOffer(
@@ -576,7 +471,7 @@ const issueCredential = async (
 
     if (!offer.credentialOffer) {
       throw new Error(
-        `credentialOffer が取得できません: ${profileId}`
+        'credentialOffer が取得できません。'
       )
     }
 
@@ -586,56 +481,146 @@ const issueCredential = async (
         offer.credentialOffer
       )
 
-    const tokenResult =
-      await requestToken(
+    const authorizationResult =
+      await generateAuthorizationUrl(
         WALLET_ID,
-        offerDetail
+        offer.credentialOffer
+      )
+
+    const details = {
+      profileId,
+      profile,
+      offer,
+      offerDetail,
+      authorizationResult,
+
+      callback: {
+        code: '',
+        state: '',
+      },
+    }
+
+    saveDetails(details)
+
+    logger.debug('')
+    logger.debug(
+      '以下の Authorization URL をブラウザで開いて認証してください。'
+    )
+    logger.debug(
+      authorizationResult.authorizationUrl
+    )
+    logger.debug('')
+    logger.debug(
+      '認証完了後、Callback で取得した code と state を以下のファイルに設定してください。'
+    )
+    logger.debug(
+      OUTPUT_PATH
+    )
+    logger.debug('')
+    logger.debug(
+      '"callback": {'
+    )
+    logger.debug(
+      '  "code": "Callback で取得した code",'
+    )
+    logger.debug(
+      '  "state": "Callback で取得した state"'
+    )
+    logger.debug(
+      '}'
+    )
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** getOfferDetails end ***')
+  }
+}
+
+/**
+ * Authorization Code を使用して
+ * Credential を取得します。
+ */
+const requestVC = async () => {
+  logger.debug('*** requestVC start ***')
+
+  try {
+    const details =
+      loadDetails()
+
+    if (!details.callback?.code) {
+      throw new Error(
+        'Callback の code を設定してください。'
+      )
+    }
+
+    if (!details.callback?.state) {
+      throw new Error(
+        'Callback の state を設定してください。'
+      )
+    }
+
+    if (
+      details.callback.state !==
+      details.authorizationResult.state
+    ) {
+      throw new Error(
+        'Callback の state が Authorization Request の state と一致しません。'
+      )
+    }
+
+    logger.debug(
+      'Callback の state を確認しました。'
+    )
+
+    const tokenResult =
+      await exchangeAuthorizationCode(
+        WALLET_ID,
+        details
       )
 
     const nonceResult =
       await requestNonce(
         WALLET_ID,
-        offerDetail
+        details.offerDetail
       )
 
     const proofResult =
       await signProof(
         WALLET_ID,
-        offerDetail,
+        details.offerDetail,
         nonceResult
       )
 
     const credentialResult =
       await fetchCredential(
         WALLET_ID,
-        offerDetail,
+        details.offerDetail,
         tokenResult,
         proofResult
       )
 
     const result = {
-      profileId,
-      profile,
-      offer,
-      offerDetail,
+      ...details,
       tokenResult,
       nonceResult,
       proofResult,
       credentialResult,
     }
 
+    saveDetails(result)
+
     logger.debug(
       'Credential 発行結果 : ',
       JSON.stringify(result, null, 2)
     )
-
-    return result
   } catch (error) {
     logger.error('error.message: ', error.message)
     logger.error('error.stack: ', error.stack)
     throw error
   } finally {
-    logger.debug('*** issueCredential end ***')
+    logger.debug('*** requestVC end ***')
   }
 }
 
@@ -646,28 +631,31 @@ const main = async () => {
   logger.debug('*** main start ***')
 
   try {
-    const results = []
+    const command =
+      process.argv[2]
 
-    for (const [profileId, credentialConfig] of
-      Object.entries(credentialMap)) {
-      logger.debug(
-        'Credential 発行処理を開始します。: ',
-        profileId
-      )
+    switch (command) {
+      case 'getOfferDetails':
+        await getOfferDetails()
+        break
 
-      const result =
-        await issueCredential(
-          profileId,
-          credentialConfig
+      case 'requestVC':
+        await requestVC()
+        break
+
+      default:
+        logger.debug(
+          '以下のいずれかを指定してください。'
         )
-
-      results.push(result)
+        logger.debug(
+          'getOfferDetails'
+        )
+        logger.debug(
+          'requestVC'
+        )
+        process.exitCode = 1
+        break
     }
-
-    logger.debug(
-      '処理結果 : ',
-      JSON.stringify(results, null, 2)
-    )
   } catch (error) {
     logger.error('処理に失敗しました。')
     logger.error('error.message: ', error.message)
@@ -679,3 +667,60 @@ const main = async () => {
 }
 
 main()
+
+
+
+
+/**
+ * Authorization Code を Access Token に交換します。
+ */
+const exchangeAuthorizationCode = async (
+  walletId,
+  {
+    code,
+    credentialIssuerBaseUrl,
+    codeVerifier = null,
+    clientId = 'eudiw-abca',
+    redirectUri = 'openid://',
+    tokenRequestHeaders = {},
+  },
+  accessToken = null
+) => {
+  logger.debug('*** exchangeAuthorizationCode start ***')
+
+  try {
+    const params = {
+      code,
+      credentialIssuerBaseUrl,
+      clientId,
+      redirectUri,
+      tokenRequestHeaders,
+    }
+
+    if (codeVerifier) {
+      params.codeVerifier =
+        codeVerifier
+    }
+
+    logger.debug('params : ', params)
+
+    const response = await fetchService.handlePost(
+      fetchService.walletApi2,
+      `/wallet/${walletId}/credentials/receive/exchange-code`,
+      accessToken,
+      params
+    )
+
+    const result = response.data || {}
+
+    logger.debug('result : ', result)
+
+    return result
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** exchangeAuthorizationCode end ***')
+  }
+}
