@@ -1,197 +1,350 @@
+  // resolvePresentationRequest,
+  // matchPresentationCredentials,
+  // buildVpToken,
+  // sendPresentationResponse,
 
-/**
- * OpenID4VP の Presentation Request を解析する
- *
- * @param {string} walletId Wallet ID
- * @param {string} requestUrl OpenID4VP Request URL
- * @param {string|null} accessToken Access Token
- * @returns {Promise<Object>} ResolveVpRequestResult
- */
-const resolvePresentationRequest = async (
+const readline = require('readline')
+const verifier2Service = require('./services/verifier2-service')
+const wallet2Service = require('./services/wallet2-service')
+const logger = require('./utils/logger')
+
+const WALLET_ID = 'Wallet IDを指定'
+const HOLDER_DID = null
+const HOLDER_KEY_ID = null
+
+const inputValue = (message) => {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    })
+
+    rl.question(message, (answer) => {
+      rl.close()
+      resolve(answer.trim())
+    })
+  })
+}
+
+const selectCredential = async (
   walletId,
-  requestUrl,
-  accessToken = null
+  queryId,
+  credentialIds
 ) => {
-  logger.debug('*** resolvePresentationRequest start ***')
+  logger.debug(
+    `DCQL Query [${queryId}] に一致する Credential を確認します。`
+  )
 
-  try {
-    const params = {
-      requestUrl,
-    }
+  const credentials = []
 
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/present/resolve-request`,
-      accessToken,
-      params
+  for (const credentialId of credentialIds) {
+    const credential =
+      await wallet2Service.getCredential(
+        walletId,
+        credentialId
+      )
+
+    credentials.push({
+      credentialId,
+      credential,
+    })
+  }
+
+  console.log('')
+  console.log(`DCQL Query : ${queryId}`)
+  console.log('一致する Credential :')
+  console.log('')
+
+  credentials.forEach((item, index) => {
+    console.log(`[${index + 1}]`)
+    console.log(`Credential ID : ${item.credentialId}`)
+    console.log(
+      JSON.stringify(item.credential, null, 2)
+    )
+    console.log('')
+  })
+
+  if (credentials.length === 1) {
+    logger.debug(
+      '一致する Credential が1件のため、自動的に選択します。'
     )
 
-    const result = response.data || {}
+    return credentials[0].credentialId
+  }
 
-    logger.debug('result : ')
-    logger.debug(JSON.stringify(result, null, 2))
+  while (true) {
+    const input = await inputValue(
+      '提示する Credential を選択してください: '
+    )
 
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** resolvePresentationRequest end ***')
+    const index = Number(input) - 1
+
+    if (
+      Number.isInteger(index) &&
+      index >= 0 &&
+      index < credentials.length
+    ) {
+      return credentials[index].credentialId
+    }
+
+    console.log('正しい番号を入力してください。')
   }
 }
 
-/**
- * DCQL Query に一致する Credential を Wallet 内から検索する
- *
- * @param {string} walletId Wallet ID
- * @param {Object} dcqlQuery DCQL Query
- * @param {string|null} accessToken Access Token
- * @returns {Promise<Object>} MatchCredentialsResult
- */
-const matchPresentationCredentials = async (
-  walletId,
-  dcqlQuery,
-  accessToken = null
-) => {
-  logger.debug('*** matchPresentationCredentials start ***')
+const verifyCredential = async () => {
+  logger.debug('*** verifyCredential start ***')
 
   try {
-    const params = {
-      dcqlQuery,
-    }
+    logger.debug('Wallet 情報を確認します。')
 
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/present/match-credentials-from-store`,
-      accessToken,
-      params
+    const wallet =
+      await wallet2Service.getWallet(WALLET_ID)
+
+    logger.debug('Wallet : ')
+    logger.debug(JSON.stringify(wallet, null, 2))
+
+    logger.debug(
+      'Wallet に保存されている Credential を確認します。'
     )
 
-    const result = response.data || {}
+    const walletCredentials =
+      await wallet2Service.getCredentials(WALLET_ID)
 
-    logger.debug('result : ')
-    logger.debug(JSON.stringify(result, null, 2))
+    logger.debug('Credentials : ')
+    logger.debug(
+      JSON.stringify(walletCredentials, null, 2)
+    )
 
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** matchPresentationCredentials end ***')
-  }
-}
+    logger.debug(
+      'Verification Session を作成します。'
+    )
 
-/**
- * 選択した Credential から VP Token を生成する
- *
- * @param {string} walletId Wallet ID
- * @param {Object} options VP Token 生成パラメータ
- * @param {string} options.requestUrl OpenID4VP Request URL
- * @param {Array<Object>} options.selectedCredentialOptions 選択した Credential
- * @param {Array<Object>|null} options.selectedDisclosureOptions 選択した Disclosure
- * @param {string|null} options.keyId Holder Key ID
- * @param {string|null} options.did Holder DID
- * @param {string|null} accessToken Access Token
- * @returns {Promise<Object>} BuildVpTokenResult
- */
-const buildVpToken = async (
-  walletId,
-  {
-    requestUrl,
-    selectedCredentialOptions,
-    selectedDisclosureOptions = null,
-    keyId = null,
-    did = null,
-  },
-  accessToken = null
-) => {
-  logger.debug('*** buildVpToken start ***')
+    const verificationSession =
+      await verifier2Service.createVerificationSession({
+        dcqlQuery: {
+          credentials: [
+            {
+              id: 'awards',
+              format: 'jwt_vc_json',
+            },
+          ],
+        },
+      })
 
-  try {
-    const params = {
+    logger.debug('Verification Session : ')
+    logger.debug(
+      JSON.stringify(verificationSession, null, 2)
+    )
+
+    const sessionId = verificationSession.sessionId
+
+    if (!sessionId) {
+      throw new Error(
+        'Verification Session の sessionId が取得できません。'
+      )
+    }
+
+    const requestUrl =
+      verificationSession.bootstrapAuthorizationRequestUrl
+
+    if (!requestUrl) {
+      throw new Error(
+        'bootstrapAuthorizationRequestUrl が取得できません。'
+      )
+    }
+
+    logger.debug('Authorization Request URL : ')
+    logger.debug(requestUrl)
+
+    logger.debug(
+      'Authorization Request を確認します。'
+    )
+
+    const authorizationRequest =
+      await verifier2Service.getAuthorizationRequest(
+        sessionId
+      )
+
+    logger.debug('Authorization Request : ')
+    logger.debug(
+      typeof authorizationRequest === 'string'
+        ? authorizationRequest
+        : JSON.stringify(
+            authorizationRequest,
+            null,
+            2
+          )
+    )
+
+    logger.debug(
+      'Presentation Request を解析します。'
+    )
+
+    const resolvedRequest =
+      await wallet2Service.resolvePresentationRequest(
+        WALLET_ID,
+        requestUrl
+      )
+
+    logger.debug('Resolved Request : ')
+    logger.debug(
+      JSON.stringify(resolvedRequest, null, 2)
+    )
+
+    const dcqlQuery = resolvedRequest.dcqlQuery
+
+    if (!dcqlQuery) {
+      throw new Error(
+        'Authorization Request に DCQL Query が存在しません。'
+      )
+    }
+
+    logger.debug(
+      '条件に一致する Credential を検索します。'
+    )
+
+    const matchResult =
+      await wallet2Service.matchPresentationCredentials(
+        WALLET_ID,
+        dcqlQuery
+      )
+
+    logger.debug('Credential Matching Result : ')
+    logger.debug(
+      JSON.stringify(matchResult, null, 2)
+    )
+
+    if (!matchResult.matchCount) {
+      throw new Error(
+        '条件に一致する Credential が存在しません。'
+      )
+    }
+
+    const matchedCredentialIds =
+      matchResult.matchedCredentialIds || {}
+
+    const selectedCredentialOptions = []
+
+    for (
+      const [queryId, credentialIds]
+      of Object.entries(matchedCredentialIds)
+    ) {
+      if (!credentialIds || credentialIds.length === 0) {
+        continue
+      }
+
+      const credentialId =
+        await selectCredential(
+          WALLET_ID,
+          queryId,
+          credentialIds
+        )
+
+      selectedCredentialOptions.push({
+        queryId,
+        credentialId,
+      })
+    }
+
+    if (selectedCredentialOptions.length === 0) {
+      throw new Error(
+        '提示する Credential が選択されていません。'
+      )
+    }
+
+    logger.debug('選択した Credential : ')
+    logger.debug(
+      JSON.stringify(
+        selectedCredentialOptions,
+        null,
+        2
+      )
+    )
+
+    logger.debug('VP Token を生成します。')
+
+    const vpTokenParams = {
       requestUrl,
       selectedCredentialOptions,
     }
 
-    if (selectedDisclosureOptions) {
-      params.selectedDisclosureOptions = selectedDisclosureOptions
+    if (HOLDER_KEY_ID) {
+      vpTokenParams.keyId = HOLDER_KEY_ID
     }
 
-    if (keyId) {
-      params.keyId = keyId
+    if (HOLDER_DID) {
+      vpTokenParams.did = HOLDER_DID
     }
 
-    if (did) {
-      params.did = did
-    }
+    const vpTokenResult =
+      await wallet2Service.buildVpToken(
+        WALLET_ID,
+        vpTokenParams
+      )
 
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/present/build-vp-token`,
-      accessToken,
-      params
+    logger.debug('VP Token Result : ')
+    logger.debug(
+      JSON.stringify(vpTokenResult, null, 2)
     )
 
-    const result = response.data || {}
+    if (!vpTokenResult.vpToken) {
+      throw new Error(
+        'vpToken が生成されませんでした。'
+      )
+    }
 
-    logger.debug('result : ')
-    logger.debug(JSON.stringify(result, null, 2))
+    logger.debug(
+      'Presentation Response を Verifier2 に送信します。'
+    )
 
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** buildVpToken end ***')
-  }
-}
-
-/**
- * VP Token を Verifier に送信する
- *
- * @param {string} walletId Wallet ID
- * @param {Object} options Presentation Response パラメータ
- * @param {string} options.requestUrl OpenID4VP Request URL
- * @param {string} options.vpToken VP Token
- * @param {string|null} options.idToken ID Token
- * @param {string|null} accessToken Access Token
- * @returns {Promise<Object>} WalletPresentResult
- */
-const sendPresentationResponse = async (
-  walletId,
-  {
-    requestUrl,
-    vpToken,
-    idToken = null,
-  },
-  accessToken = null
-) => {
-  logger.debug('*** sendPresentationResponse start ***')
-
-  try {
-    const params = {
+    const responseParams = {
       requestUrl,
-      vpToken,
+      vpToken: vpTokenResult.vpToken,
     }
 
-    if (idToken) {
-      params.idToken = idToken
+    if (vpTokenResult.idToken) {
+      responseParams.idToken =
+        vpTokenResult.idToken
     }
 
-    const response = await fetchService.handlePost(
-      fetchService.walletApi2,
-      `/wallet/${walletId}/credentials/present/send-response`,
-      accessToken,
-      params
+    const presentationResult =
+      await wallet2Service.sendPresentationResponse(
+        WALLET_ID,
+        responseParams
+      )
+
+    logger.debug('Presentation Result : ')
+    logger.debug(
+      JSON.stringify(presentationResult, null, 2)
     )
 
-    const result = response.data || {}
+    logger.debug(
+      'Verification Result を確認します。'
+    )
 
-    logger.debug('result : ')
-    logger.debug(JSON.stringify(result, null, 2))
+    const verificationResult =
+      await verifier2Service.getVerificationSession(
+        sessionId
+      )
+
+    logger.debug('Verification Result : ')
+    logger.debug(
+      JSON.stringify(verificationResult, null, 2)
+    )
+
+    const result = {
+      walletId: WALLET_ID,
+      sessionId,
+      matchedCredentialIds,
+      selectedCredentialOptions,
+      presentationResult,
+      verificationResult,
+    }
+
+    logger.debug('Verification 処理結果 : ')
+    logger.debug(
+      JSON.stringify(result, null, 2)
+    )
 
     return result
   } catch (error) {
@@ -199,6 +352,8 @@ const sendPresentationResponse = async (
     logger.error('error.stack: ', error.stack)
     throw error
   } finally {
-    logger.debug('*** sendPresentationResponse end ***')
+    logger.debug('*** verifyCredential end ***')
   }
 }
+
+verifyCredential()
