@@ -1,155 +1,45 @@
-// waltid-services/waltid-issuer-api2/src/main/kotlin/id/walt/issuer2/application/Issuer2Module.kt
-
-package id.walt.issuer2.application
-
-import id.walt.commons.config.ConfigManager
-import id.walt.issuer2.application.openid4vci.OpenId4VciModule
-import id.walt.issuer2.config.Issuer2MetadataConfig
-import id.walt.issuer2.config.Issuer2ProfilesConfig
-import id.walt.issuer2.config.Issuer2ServiceConfig
-import id.walt.issuer2.config.VcStatusConfig
-import id.walt.issuer2.controller.Issuer2ManagementController
-import id.walt.issuer2.controller.OpenId4VciController
-import id.walt.issuer2.notifications.IssuanceNotificationService
-import id.walt.issuer2.repository.ConfiguredIssuanceSessionRepository
-import id.walt.issuer2.repository.IssuanceSessionRepository
-import id.walt.issuer2.repository.openid4vci.ConfiguredAuthorizationCodeRepository
-import id.walt.issuer2.repository.openid4vci.ConfiguredPARRepository
-import id.walt.issuer2.repository.openid4vci.ConfiguredPreAuthorizedCodeRepository
-import id.walt.issuer2.repository.openid4vci.ConfiguredRefreshTokenRepository
-import id.walt.issuer2.service.CredentialOfferService
-import id.walt.issuer2.service.CredentialProfileService
-import id.walt.issuer2.service.IssuanceSessionService
-import id.walt.issuer2.service.openid4vci.CredentialProofKeyAcceptance
-import id.walt.issuer2.service.openid4vci.CredentialProofKeyCommitment
-import id.walt.issuer2.service.openid4vci.MetadataService
-import id.walt.issuer2.service.openid4vci.OpenId4VciProtocolService
-import id.walt.issuer2.service.status.VcStatusService
-import id.walt.openid4vci.repository.preauthorized.PreAuthorizedCodeRepository
-
-class Issuer2Module @JvmOverloads constructor(
-    serviceConfig: Issuer2ServiceConfig,
-    metadataConfig: Issuer2MetadataConfig,
-    profilesConfig: Issuer2ProfilesConfig,
-    vcStatusConfig: VcStatusConfig,
-    credentialProofKeyAcceptance: CredentialProofKeyAcceptance? = null,
-    credentialProofKeyCommitment: CredentialProofKeyCommitment? = null,
-    issuanceSessionRepository: IssuanceSessionRepository = ConfiguredIssuanceSessionRepository(),
-    preAuthorizedCodeRepository: PreAuthorizedCodeRepository = ConfiguredPreAuthorizedCodeRepository(),
-) {
-    private val authorizationCodeRepository = ConfiguredAuthorizationCodeRepository()
-    private val parRepository = ConfiguredPARRepository()
-    private val refreshTokenRepository = ConfiguredRefreshTokenRepository()
-    private val notificationService = IssuanceNotificationService()
-
-    private val openId4VciModule = OpenId4VciModule.create(
-        config = serviceConfig,
-        authorizationCodeRepository = authorizationCodeRepository,
-        preAuthorizedCodeRepository = preAuthorizedCodeRepository,
-        parRepository = parRepository,
-        refreshTokenRepository = refreshTokenRepository,
-    )
-
-    private val credentialProfileService = CredentialProfileService(
-        profilesConfig = profilesConfig,
-        metadataConfig = metadataConfig,
-    )
-
-    private val issuanceSessionService = IssuanceSessionService(
-        repository = issuanceSessionRepository,
-    )
-
-    private val metadataService = MetadataService(
-        serviceConfig = serviceConfig,
-        metadataConfig = metadataConfig,
-        profileService = credentialProfileService,
-        sessionService = issuanceSessionService,
-        preAuthorizedGrantAnonymousAccessSupported =
-            openId4VciModule.preAuthorizedCodeIssuer.anonymousAccessSupported,
-        crypto2TokenSigningKey = openId4VciModule.crypto2TokenSigningKey,
-    )
-
-    private val vcStatusService = VcStatusService(
-        config = vcStatusConfig,
-    )
-
-    val credentialOfferService = CredentialOfferService(
-        profileService = credentialProfileService,
-        sessionService = issuanceSessionService,
-        preAuthorizedCodeIssuer = openId4VciModule.preAuthorizedCodeIssuer,
-        config = serviceConfig,
-        notificationService = notificationService,
-    )
-
-    private val protocolService = OpenId4VciProtocolService(
-        oauth2Provider = openId4VciModule.oauth2Provider,
-        sessionService = issuanceSessionService,
-        profileService = credentialProfileService,
-        metadataService = metadataService,
-        notificationService = notificationService,
-        credentialProofKeyAcceptance = credentialProofKeyAcceptance,
-        credentialProofKeyCommitment = credentialProofKeyCommitment,
-        credentialNonceService = openId4VciModule.credentialNonceService,
-        vcStatusService = vcStatusService,
-    )
-
-    val managementController = Issuer2ManagementController(
-        profileService = credentialProfileService,
-        sessionService = issuanceSessionService,
-        offerService = credentialOfferService,
-    )
-
-    val openId4VciController = OpenId4VciController(
-        metadataService = metadataService,
-        protocolService = protocolService,
-        offerService = credentialOfferService,
-        notificationService = notificationService,
-    )
-
-    companion object {
-        @JvmOverloads
-        fun load(
-            credentialProofKeyAcceptance: CredentialProofKeyAcceptance? = null,
-        ): Issuer2Module =
-            Issuer2Module(
-                serviceConfig = ConfigManager.getConfig(),
-                metadataConfig = ConfigManager.getConfig(),
-                profilesConfig = ConfigManager.getConfig(),
-                vcStatusConfig = ConfigManager.getConfig(),
-                credentialProofKeyAcceptance = credentialProofKeyAcceptance,
-            )
-    }
-}
-
-// src/main/kotlin/id/walt/issuer2/service/status/VcStatusService.kt
 package id.walt.issuer2.service.status
 
 import id.walt.issuer2.config.VcStatusConfig
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.bearerAuth
-import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.http.Parameters
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Parameters
+import io.ktor.http.URLBuilder
+import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class VcStatusService(
     private val config: VcStatusConfig,
 ) {
+    private val logger = KotlinLogging.logger {}
+
     private val json = Json {
         ignoreUnknownKeys = true
+        explicitNulls = false
     }
 
-    private val httpClient = HttpClient(CIO) {
+    private val http = HttpClient {
         install(ContentNegotiation) {
             json(json)
         }
@@ -157,83 +47,273 @@ class VcStatusService(
 
     fun isEnabled(): Boolean = config.enabled
 
-    suspend fun assignIndex(
+    suspend fun buildCredentialStatus(
         issuerDid: String,
-        vcType: String,
-        vcId: String,
-    ): JsonObject {
-        require(config.enabled) {
-            "VC Status service is disabled"
+        credentialType: String,
+        credentialId: String,
+    ): JsonElement? {
+        if (!config.enabled) {
+            return null
         }
 
-        val accessToken = getAccessToken()
+        require(issuerDid.isNotBlank()) {
+            "issuerDid must not be blank"
+        }
 
-        val path = config.api.allocatePath.replace(
-            "{issuer_did}",
-            issuerDid,
+        require(credentialType.isNotBlank()) {
+            "credentialType must not be blank"
+        }
+
+        require(credentialId.isNotBlank()) {
+            "credentialId must not be blank"
+        }
+
+        logger.debug {
+            "VC Status assignment start: issuerDid=$issuerDid, " +
+                "credentialType=$credentialType, credentialId=$credentialId"
+        }
+
+        val accessToken = getKeycloakAccessToken()
+
+        val assignResults = assignBslIndex(
+            accessToken = accessToken,
+            issuerDid = issuerDid,
+            credentialType = credentialType,
+            credentialId = credentialId,
         )
 
-        val url = "${config.api.baseUrl.trimEnd('/')}/${path.trimStart('/')}"
+        val credentialStatus = createCredentialStatus(
+            issuerDid = issuerDid,
+            assignResults = assignResults,
+        )
 
-        return httpClient.post(url) {
-            bearerAuth(accessToken)
-            contentType(ContentType.Application.Json)
-
-            setBody(
-                AssignIndexRequest(
-                    vcType = vcType,
-                    vcId = vcId,
-                )
-            )
-        }.body()
-    }
-
-    private suspend fun getAccessToken(): String {
-        val response = httpClient.post(config.authentication.tokenUrl) {
-            setBody(
-                FormDataContent(
-                    Parameters.build {
-                        append("grant_type", "client_credentials")
-                        append("client_id", config.authentication.clientId)
-
-                        if (config.authentication.clientSecret.isNotBlank()) {
-                            append(
-                                "client_secret",
-                                config.authentication.clientSecret,
-                            )
-                        }
-                    }
-                )
-            )
-        }.body<TokenResponse>()
-
-        require(response.accessToken.isNotBlank()) {
-            "Failed to obtain VC Status API access token"
+        logger.debug {
+            "VC Status assignment completed: $credentialStatus"
         }
 
-        return response.accessToken
+        return credentialStatus
     }
 
-    @Serializable
-    private data class AssignIndexRequest(
-        @SerialName("vc_type")
-        val vcType: String,
+    private suspend fun getKeycloakAccessToken(): String {
+        logger.debug {
+            "Getting Keycloak access token: ${config.authentication.tokenUrl}"
+        }
 
-        @SerialName("vc_id")
-        val vcId: String,
-    )
+        val response = http.submitForm(
+            url = config.authentication.tokenUrl,
+            formParameters = Parameters.build {
+                append(
+                    "grant_type",
+                    "client_credentials",
+                )
+                append(
+                    "client_id",
+                    config.authentication.clientId,
+                )
+                append(
+                    "client_secret",
+                    config.authentication.clientSecret,
+                )
+            },
+        )
 
-    @Serializable
-    private data class TokenResponse(
-        @SerialName("access_token")
-        val accessToken: String,
+        val body = response.bodyAsText()
 
-        @SerialName("token_type")
-        val tokenType: String? = null,
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(
+                "Keycloak token API failed: " +
+                    "${response.status.value} - $body"
+            )
+        }
 
-        @SerialName("expires_in")
-        val expiresIn: Long? = null,
-    )
+        val responseJson = try {
+            json.parseToJsonElement(body).jsonObject
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "Invalid Keycloak token response: $body",
+                e,
+            )
+        }
+
+        return responseJson["access_token"]
+            ?.jsonPrimitive
+            ?.content
+            ?: throw IllegalStateException(
+                "access_token not found in Keycloak token response"
+            )
+    }
+
+    private suspend fun assignBslIndex(
+        accessToken: String,
+        issuerDid: String,
+        credentialType: String,
+        credentialId: String,
+    ): JsonArray {
+        val assignEndpoint = buildAssignEndpoint(
+            issuerDid = issuerDid,
+        )
+
+        val postBody = buildJsonObject {
+            put("vc_type", credentialType)
+            put("vc_id", credentialId)
+        }
+
+        logger.debug {
+            "Assign BSL index: endpoint=$assignEndpoint, body=$postBody"
+        }
+
+        val response = http.post(assignEndpoint) {
+            headers {
+                append(
+                    HttpHeaders.Authorization,
+                    "Bearer $accessToken",
+                )
+            }
+
+            contentType(ContentType.Application.Json)
+            setBody(postBody.toString())
+        }
+
+        val body = response.bodyAsText()
+
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(
+                "Assign index API failed: " +
+                    "${response.status.value} - $body"
+            )
+        }
+
+        return try {
+            json.parseToJsonElement(body).jsonArray
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "Invalid assignIndex response: $body",
+                e,
+            )
+        }
+    }
+
+    private fun buildAssignEndpoint(
+        issuerDid: String,
+    ): String {
+        val pathSegments = config.api.allocatePath
+            .trim('/')
+            .split('/')
+            .filter { it.isNotBlank() }
+
+        val builder = URLBuilder(
+            config.api.baseUrl.trimEnd('/')
+        )
+
+        pathSegments.forEach { segment ->
+            if (segment == "{issuer_did}") {
+                builder.appendPathSegments(issuerDid)
+            } else {
+                builder.appendPathSegments(segment)
+            }
+        }
+
+        return builder.buildString()
+    }
+
+    private fun createCredentialStatus(
+        issuerDid: String,
+        assignResults: JsonArray,
+    ): JsonElement? {
+        val credentialStatusArray = buildJsonArray {
+            assignResults.forEach { element ->
+                val obj = element.jsonObject
+
+                val statusPurpose =
+                    obj["statusPurpose"]
+                        ?.jsonPrimitive
+                        ?.content
+                        ?: return@forEach
+
+                if (statusPurpose != "revocation") {
+                    return@forEach
+                }
+
+                val bslVcUrl =
+                    obj["bslVcUrl"]
+                        ?.jsonPrimitive
+                        ?.content
+                        ?: throw IllegalStateException(
+                            "bslVcUrl not found in assignIndex response"
+                        )
+
+                val statusListIndex =
+                    obj["index"]
+                        ?.jsonPrimitive
+                        ?.content
+                        ?: throw IllegalStateException(
+                            "index not found in assignIndex response"
+                        )
+
+                val statusListCredential =
+                    buildStatusListCredentialUrl(
+                        issuerDid = issuerDid,
+                        bslVcUrl = bslVcUrl,
+                    )
+
+                add(
+                    buildJsonObject {
+                        put(
+                            "id",
+                            JsonPrimitive(
+                                "$statusListCredential#$statusListIndex"
+                            ),
+                        )
+                        put(
+                            "type",
+                            JsonPrimitive(
+                                "BitstringStatusListEntry"
+                            ),
+                        )
+                        put(
+                            "statusPurpose",
+                            JsonPrimitive(statusPurpose),
+                        )
+                        put(
+                            "statusListIndex",
+                            JsonPrimitive(statusListIndex),
+                        )
+                        put(
+                            "statusListCredential",
+                            JsonPrimitive(statusListCredential),
+                        )
+                        put(
+                            "statusSize",
+                            JsonPrimitive(1),
+                        )
+                    }
+                )
+            }
+        }
+
+        if (credentialStatusArray.isEmpty()) {
+            logger.warn {
+                "No revocation status entry returned from assignIndex"
+            }
+
+            return null
+        }
+
+        return credentialStatusArray
+    }
+
+    private fun buildStatusListCredentialUrl(
+        issuerDid: String,
+        bslVcUrl: String,
+    ): String =
+        URLBuilder(config.api.baseUrl.trimEnd('/'))
+            .appendPathSegments(
+                "issuers",
+                issuerDid,
+                "bsl",
+                "vcUrls",
+                bslVcUrl,
+                "credential",
+            )
+            .buildString()
 }
-
-
