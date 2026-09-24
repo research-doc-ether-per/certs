@@ -1,10 +1,23 @@
-import id.walt.issuer2.service.VcStatusService
-import kotlinx.serialization.json.*
+val credentialId = session.credentialData["id"]
+    ?.jsonPrimitive
+    ?.content
+    ?: throw IllegalStateException(
+        "Credential id is required for VC Status assignment"
+    )
 
+val credentialType = session.credentialData["type"]?.let { type ->
+    when (type) {
+        is JsonArray -> type.lastOrNull()
+            ?.jsonPrimitive
+            ?.content
 
-private val vcStatusService: VcStatusService,
+        is JsonPrimitive -> type.content
 
-
+        else -> null
+    }
+} ?: throw IllegalStateException(
+    "Credential type is required for VC Status assignment"
+)
 
 val credentialStatus =
     session.credentialStatus
@@ -17,23 +30,3 @@ val credentialStatus =
         } else {
             null
         }
-
-val credentialDataWithStatus = credentialStatus?.let { status ->
-    when (configuration.format) {
-        CredentialFormat.JWT_VC_JSON,
-        CredentialFormat.JWT_VC,
-        CredentialFormat.JWT_VC_JSON_LD -> {
-            JsonObject(session.credentialData.toMutableMap().apply {
-                put("credentialStatus", status)
-            })
-        }
-
-        CredentialFormat.SD_JWT_VC -> {
-            JsonObject(session.credentialData.toMutableMap().apply {
-                put("status", status)
-            })
-        }
-
-        else -> session.credentialData
-    }
-} ?: session.credentialData
