@@ -1,11 +1,70 @@
+// vc-status.conf
+enabled = true
 
-waltid-cli v1.0.0を確認したところ、DID作成は did:key と did:jwk のみ対応していて、did:web には対応していないです。
+api {
+    baseUrl = "http://10.0.2.15:6005"
+    allocatePath = "/admin/issuers/{issuer_did}/bsl/assignIndex"
+}
 
-参照：
-- [DidCreateCmd.kt#L56: `The native crypto2 DID method to use: key or jwk.`](https://github.com/walt-id/waltid-identity/blob/v1.0.0/waltid-applications/waltid-cli/src/commonMain/kotlin/id/walt/cli/commands/DidCreateCmd.kt#L56)
-- [waltid-cli README: `CLI creation advertises only the native crypto2 did:key and did:jwk registrars; former non-native method options were removed.`](https://github.com/walt-id/waltid-identity/blob/v1.0.0/waltid-applications/waltid-cli/README.md#dids)
-  
-waltid-didライブラリには did:web の作成処理（DidWebCreateOptions）が残っていますので。CLI側を修正すれば、did:web の作成にも対応できそうです。
-参照：
-- [DidWebCreateOptions.kt](https://github.com/walt-id/waltid-identity/blob/v1.0.0/waltid-libraries/waltid-did/src/commonMain/kotlin/id/walt/did/dids/registrar/dids/DidWebCreateOptions.kt)
-- [waltid-did README（did:web作成例）](https://github.com/walt-id/waltid-identity/blob/v1.0.0/waltid-libraries/waltid-did/README.md)
+authentication {
+    tokenUrl = "http://10.0.2.15:8580/realms/groupCertAuth/protocol/openid-connect/token"
+    clientId = "vc-registry-api"
+    clientSecret = ""
+}
+
+
+// waltid-services/waltid-issuer-api2/
+// └─ src/main/kotlin/id/walt/issuer2/config/
+//    └─ VcStatusConfig.kt
+
+
+package id.walt.issuer2.config
+
+import id.walt.commons.config.WaltConfig
+
+data class VcStatusConfig(
+    val enabled: Boolean = false,
+    val api: VcStatusApiConfig,
+    val authentication: VcStatusAuthenticationConfig,
+) : WaltConfig()
+
+data class VcStatusApiConfig(
+    val baseUrl: String,
+    val allocatePath: String,
+)
+
+data class VcStatusAuthenticationConfig(
+    val tokenUrl: String,
+    val clientId: String,
+    val clientSecret: String = "",
+)
+
+
+  // Issuer2Module.kt
+
+  import id.walt.issuer2.config.VcStatusConfig
+
+  class Issuer2Module @JvmOverloads constructor(
+    serviceConfig: Issuer2ServiceConfig,
+    metadataConfig: Issuer2MetadataConfig,
+    profilesConfig: Issuer2ProfilesConfig,
+    vcStatusConfig: VcStatusConfig,
+    credentialProofKeyAcceptance: CredentialProofKeyAcceptance? = null,
+    credentialProofKeyCommitment: CredentialProofKeyCommitment? = null,
+    issuanceSessionRepository: IssuanceSessionRepository = ConfiguredIssuanceSessionRepository(),
+    preAuthorizedCodeRepository: PreAuthorizedCodeRepository = ConfiguredPreAuthorizedCodeRepository(),
+)
+
+  companion object {
+    @JvmOverloads
+    fun load(
+        credentialProofKeyAcceptance: CredentialProofKeyAcceptance? = null,
+    ): Issuer2Module =
+        Issuer2Module(
+            serviceConfig = ConfigManager.getConfig(),
+            metadataConfig = ConfigManager.getConfig(),
+            profilesConfig = ConfigManager.getConfig(),
+            vcStatusConfig = ConfigManager.getConfig(),
+            credentialProofKeyAcceptance = credentialProofKeyAcceptance,
+        )
+}
