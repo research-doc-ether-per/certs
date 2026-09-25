@@ -1,9 +1,1 @@
-
-SELECT
-    store_id,
-    key_id,
-    key_type,
-    serialized_key,
-    crypto2_stored_key
-FROM keys
-WHERE key_id = '1Y0p9T42TBx2LyQHyIE-dvwGrbcmfo8o-pp5HUsajmc';
+wallet-api2 では API 経由で秘密鍵を取得できませんが、SQL で直接取得することは可能です。PostgreSQL を使用する場合は、以下の SQL で確認できます。
