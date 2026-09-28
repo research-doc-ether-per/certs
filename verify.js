@@ -7,6 +7,9 @@ const extractPolicyResults = (verificationResult) => {
   try {
     const policyResults = verificationResult?.policy_results;
 
+    const credentials =
+      verificationResult?.setup?.core_flow?.dcql_query?.credentials ?? [];
+
     if (!policyResults) {
       return {
         vp: {},
@@ -15,14 +18,18 @@ const extractPolicyResults = (verificationResult) => {
     }
 
     const result = {
-      vp: extractVpPolicyResults(policyResults.vp_policies),
+      vp: extractVpPolicyResults(
+        policyResults.vp_policies
+      ),
       vc: extractVcPolicyResults(
         policyResults.vc_policies,
-        policyResults.specific_vc_policies
+        policyResults.specific_vc_policies,
+        credentials
       ),
     };
 
-    console.debug("result : ", result);
+    console.debug("Extracted Policy Result : ");
+    console.debug(JSON.stringify(result, null, 2));
 
     return result;
   } catch (error) {
@@ -36,6 +43,12 @@ const extractPolicyResults = (verificationResult) => {
 
 /**
  * VP policy の検証結果を抽出する。
+ *
+ * policy ID は format を含めてそのまま使用する。
+ *
+ * 例:
+ * jwt_vc_json/audience-check
+ * dc+sd-jwt/kb-jwt-signature
  */
 const extractVpPolicyResults = (vpPolicies) => {
   const result = {};
@@ -56,8 +69,8 @@ const extractVpPolicyResults = (vpPolicies) => {
         continue;
       }
 
-      // format を含む policy ID をそのまま使用する
-      result[policyId] = policyResult.success === true;
+      result[policyId] =
+        policyResult.success === true;
     }
   }
 
@@ -67,16 +80,28 @@ const extractVpPolicyResults = (vpPolicies) => {
 /**
  * VC policy / specific VC policy の検証結果を抽出する。
  */
-const extractVcPolicyResults = (vcPolicies, specificVcPolicies) => {
+const extractVcPolicyResults = (
+  vcPolicies,
+  specificVcPolicies,
+  credentials
+) => {
   const result = {};
 
   // 共通 VC policy
-  addVcPolicyResults(result, vcPolicies);
+  addVcPolicyResults(
+    result,
+    vcPolicies,
+    credentials
+  );
 
   // Credential ごとの specific VC policy
   if (specificVcPolicies) {
     for (const policyResults of Object.values(specificVcPolicies)) {
-      addVcPolicyResults(result, policyResults);
+      addVcPolicyResults(
+        result,
+        policyResults,
+        credentials
+      );
     }
   }
 
@@ -86,7 +111,11 @@ const extractVcPolicyResults = (vcPolicies, specificVcPolicies) => {
 /**
  * VC policy の検証結果を追加する。
  */
-const addVcPolicyResults = (result, policyResults) => {
+const addVcPolicyResults = (
+  result,
+  policyResults,
+  credentials
+) => {
   if (!Array.isArray(policyResults)) {
     return;
   }
@@ -98,7 +127,10 @@ const addVcPolicyResults = (result, policyResults) => {
       continue;
     }
 
-    const credentialType = getCredentialType(queryId);
+    const credentialType = getCredentialType(
+      queryId,
+      credentials
+    );
 
     if (!credentialType) {
       continue;
@@ -108,7 +140,8 @@ const addVcPolicyResults = (result, policyResults) => {
       result[credentialType] = {};
     }
 
-    const policyKey = getVcPolicyKey(policyResult);
+    const policyKey =
+      getVcPolicyKey(policyResult);
 
     if (!policyKey) {
       continue;
@@ -155,6 +188,7 @@ const getVcPolicyKey = (policyResult) => {
 /**
  * JSONPath の先頭 "$." を除去する。
  *
+ * 例:
  * $.credentialSubject.category
  *   -> credentialSubject.category
  */
@@ -163,28 +197,64 @@ const normalizeJsonPath = (path) => {
 };
 
 /**
- * query_id から Credential type を取得する。
+ * query_id に対応する DCQL Credential から
+ * Credential type を取得する。
  *
- * 例:
- * Awards_jwt_vc_json -> Awards
- * Career_dc+sd-jwt   -> Career
+ * jwt_vc_json:
+ *   meta.type_values から取得
+ *
+ * dc+sd-jwt:
+ *   meta.vct_values の URI 末尾から取得
  */
-const getCredentialType = (queryId) => {
-  if (!queryId) {
+const getCredentialType = (
+  queryId,
+  credentials
+) => {
+  if (!queryId || !Array.isArray(credentials)) {
     return null;
   }
 
-  const formatSuffixes = [
-    "_jwt_vc_json",
-    "_dc+sd-jwt",
-  ];
+  const credential = credentials.find(
+    (item) => item.id === queryId
+  );
 
-  for (const suffix of formatSuffixes) {
-    if (queryId.endsWith(suffix)) {
-      return queryId.slice(0, -suffix.length);
-    }
+  // 対応する Credential が見つからない場合
+  if (!credential) {
+    return queryId;
   }
 
-  // 想定外の query_id の場合はそのまま使用する
+  // JWT VC
+  //
+  // 例:
+  // meta: {
+  //   type_values: [
+  //     ["Awards"]
+  //   ]
+  // }
+  const typeValue =
+    credential.meta?.type_values?.[0]?.[0];
+
+  if (typeValue) {
+    return typeValue;
+  }
+
+  // SD-JWT VC
+  //
+  // 例:
+  // meta: {
+  //   vct_values: [
+  //     "http://10.0.2.15:7005/openid4vci/Career"
+  //   ]
+  // }
+  const vct =
+    credential.meta?.vct_values?.[0];
+
+  if (vct) {
+    return vct.substring(
+      vct.lastIndexOf("/") + 1
+    );
+  }
+
+  // Credential type を特定できない場合
   return queryId;
 };
