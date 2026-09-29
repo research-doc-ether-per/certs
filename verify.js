@@ -1,74 +1,65 @@
+const dayjs = require("dayjs");
+const customParseFormat = require("dayjs/plugin/customParseFormat");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
+
+dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
+const TIMEZONE = "Asia/Tokyo";
+
 /**
- * Awards VC の日付（YYYY/MM/DD）を Date 型に変換する。
+ * Awards VC の issuedAt を解析する
+ *
+ * 形式：YYYY/MM/DD
+ * 例：2022/09/01
  */
-const parseDate = (value) => {
-  console.debug("*** parseDate start ***");
+const parseIssuedAt = (value) => {
+  console.debug("*** parseIssuedAt start ***");
 
   try {
-    if (!value) return null;
-
-    if (typeof value === "number") {
-      return new Date(value * 1000);
-    }
-
-    if (typeof value !== "string") {
+    if (!value) {
       return null;
     }
 
-    const trimmedValue = value.trim();
-    const yyyymmdd = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(trimmedValue);
+    const parsedDate = dayjs.tz(value, "YYYY/MM/DD", TIMEZONE);
 
-    if (yyyymmdd) {
-      const year = Number(yyyymmdd[1]);
-      const month = Number(yyyymmdd[2]);
-      const day = Number(yyyymmdd[3]);
-      const result = new Date(year, month - 1, day);
-
-      if (
-        result.getFullYear() !== year ||
-        result.getMonth() !== month - 1 ||
-        result.getDate() !== day
-      ) {
-        return null;
-      }
-
-      return result;
+    if (!parsedDate.isValid()) {
+      return null;
     }
 
-    const result = new Date(trimmedValue);
-    return Number.isNaN(result.getTime()) ? null : result;
+    return parsedDate;
   } catch (error) {
     console.error("error.message: ", error.message);
     console.error("error.stack: ", error.stack);
     throw error;
   } finally {
-    console.debug("*** parseDate end ***");
+    console.debug("*** parseIssuedAt end ***");
   }
 };
 
 /**
- * Career VC の年月（YYYY/MM）を year / month に変換する。
+ * Career VC の from / to を解析する
+ *
+ * 形式：YYYY/MM
+ * 例：2020/04
  */
 const parseYearMonth = (value) => {
   console.debug("*** parseYearMonth start ***");
 
   try {
-    if (!value || typeof value !== "string") return null;
+    if (!value) {
+      return null;
+    }
 
-    const trimmedValue = value.trim();
-    const yyyymm = /^(\d{4})\/(\d{2})$/.exec(trimmedValue);
+    const parsedDate = dayjs.tz(value, "YYYY/MM", TIMEZONE);
 
-    if (!yyyymm) return null;
+    if (!parsedDate.isValid()) {
+      return null;
+    }
 
-    const year = Number(yyyymm[1]);
-    const month = Number(yyyymm[2]);
-
-    if (month < 1 || month > 12) return null;
-
-    const result = { year, month };
-    console.debug("result : ", result);
-
-    return result;
+    return parsedDate;
   } catch (error) {
     console.error("error.message: ", error.message);
     console.error("error.stack: ", error.stack);
@@ -79,16 +70,15 @@ const parseYearMonth = (value) => {
 };
 
 /**
- * year / month を YYYY/MM 形式に変換する。
+ * 現在日付を日本時間で取得する
  */
-const formatYearMonth = (yearMonth) => {
-  console.debug("*** formatYearMonth start ***");
+const getCurrentDate = () => {
+  console.debug("*** getCurrentDate start ***");
 
   try {
-    if (!yearMonth) return null;
+    const result = dayjs().tz(TIMEZONE);
 
-    const result = `${yearMonth.year}/${String(yearMonth.month).padStart(2, "0")}`;
-    console.debug("result : ", result);
+    console.debug("result : ", result.format("YYYY/MM/DD"));
 
     return result;
   } catch (error) {
@@ -96,24 +86,49 @@ const formatYearMonth = (yearMonth) => {
     console.error("error.stack: ", error.stack);
     throw error;
   } finally {
-    console.debug("*** formatYearMonth end ***");
+    console.debug("*** getCurrentDate end ***");
   }
 };
 
 /**
- * 対象日が現在から指定年数以内であるかを判定する。
+ * 現在年月を日本時間で取得する
+ */
+const getCurrentYearMonth = () => {
+  console.debug("*** getCurrentYearMonth start ***");
+
+  try {
+    const result = dayjs().tz(TIMEZONE).startOf("month");
+
+    console.debug("result : ", result.format("YYYY/MM"));
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** getCurrentYearMonth end ***");
+  }
+};
+
+/**
+ * 指定日が現在日付から指定年数以内かどうかを判定する
  */
 const isWithinYears = (targetDate, years) => {
   console.debug("*** isWithinYears start ***");
 
   try {
-    if (!targetDate) return false;
+    if (!targetDate || !years) {
+      return false;
+    }
 
-    const now = new Date();
-    const threshold = new Date(now);
-    threshold.setFullYear(now.getFullYear() - years);
+    const currentDate = getCurrentDate();
+    const thresholdDate = currentDate.subtract(years, "year");
 
-    const result = targetDate >= threshold && targetDate <= now;
+    const result =
+      targetDate.isSame(thresholdDate, "day") ||
+      targetDate.isAfter(thresholdDate, "day");
+
     console.debug("result : ", result);
 
     return result;
@@ -127,23 +142,28 @@ const isWithinYears = (targetDate, years) => {
 };
 
 /**
- * from ～ to の年月が指定年数以上であるかを判定する。
+ * from ～ to の期間が指定年数以上かどうかを判定する
  *
- * Career VC の from / to は YYYY/MM 形式のため、月単位で判定する。
- * 例：2020/04 ～ 2023/03 は 36 か月として扱う。
+ * from / to は YYYY/MM 形式のため、月単位で判定する。
+ * 例：
+ * from: 2020/04
+ * to  : 2023/03
+ * => 36か月として扱う
  */
-const isYearMonthPeriodAtLeastYears = (fromYearMonth, toYearMonth, years) => {
-  console.debug("*** isYearMonthPeriodAtLeastYears start ***");
+const isPeriodAtLeastYears = (fromDate, toDate, years) => {
+  console.debug("*** isPeriodAtLeastYears start ***");
 
   try {
-    if (!fromYearMonth || !toYearMonth) return false;
+    if (!fromDate || !toDate || !years) {
+      return false;
+    }
 
-    const months =
-      (toYearMonth.year - fromYearMonth.year) * 12 +
-      (toYearMonth.month - fromYearMonth.month) +
-      1;
+    const requiredMonths = years * 12;
 
-    const result = months >= years * 12;
+    const diffMonths = toDate.diff(fromDate, "month") + 1;
+
+    const result = diffMonths >= requiredMonths;
+
     console.debug("result : ", result);
 
     return result;
@@ -152,219 +172,67 @@ const isYearMonthPeriodAtLeastYears = (fromYearMonth, toYearMonth, years) => {
     console.error("error.stack: ", error.stack);
     throw error;
   } finally {
-    console.debug("*** isYearMonthPeriodAtLeastYears end ***");
+    console.debug("*** isPeriodAtLeastYears end ***");
+  }
+};
+
+/**
+ * dayjs オブジェクトを YYYY/MM/DD 形式に変換する
+ */
+const formatDate = (date) => {
+  console.debug("*** formatDate start ***");
+
+  try {
+    if (!date) {
+      return null;
+    }
+
+    const result = date.tz(TIMEZONE).format("YYYY/MM/DD");
+
+    console.debug("result : ", result);
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** formatDate end ***");
+  }
+};
+
+/**
+ * dayjs オブジェクトを YYYY/MM 形式に変換する
+ */
+const formatYearMonth = (date) => {
+  console.debug("*** formatYearMonth start ***");
+
+  try {
+    if (!date) {
+      return null;
+    }
+
+    const result = date.tz(TIMEZONE).format("YYYY/MM");
+
+    console.debug("result : ", result);
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** formatYearMonth end ***");
   }
 };
 
 module.exports = {
-  parseDate,
+  parseIssuedAt,
   parseYearMonth,
-  formatYearMonth,
+  getCurrentDate,
+  getCurrentYearMonth,
   isWithinYears,
-  isYearMonthPeriodAtLeastYears,
-};
-
-
-
-
-const { parseDate, isWithinYears } = require("../utils/dateUtils");
-const { getYearsFromParams } = require("../utils/paramUtils");
-const {
-  getVcFromRequest,
-  getCredentialSubject,
-  buildResult,
-  sendPolicyResult,
-} = require("../utils/vcUtils");
-
-/**
- * Awards VC から表彰日を取得する。
- *
- * 現時点では issuedAt を主な確認対象とする。
- * VC のデータ構造によって項目名が異なる可能性があるため、
- * awardedAt / awardDate / issuanceDate / iat も候補として確認する。
- */
-const getAwardsIssuedAt = async (vc) => {
-  console.debug("*** getAwardsIssuedAt start ***");
-
-  try {
-    const credentialSubject = getCredentialSubject(vc);
-
-    const result =
-      parseDate(credentialSubject.issuedAt) ||
-      parseDate(credentialSubject.awardedAt) ||
-      parseDate(credentialSubject.awardDate) ||
-      parseDate(vc.issuanceDate) ||
-      parseDate(vc.issuedAt) ||
-      parseDate(vc.iat);
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-    throw error;
-  } finally {
-    console.debug("*** getAwardsIssuedAt end ***");
-  }
-};
-
-/**
- * Awards VC の表彰日が指定年数以内であるかを検証する。
- */
-const validateIssuedAtWithinYears = async (req, res) => {
-  console.debug("*** validateIssuedAtWithinYears start ***");
-
-  try {
-    const years = await getYearsFromParams(req);
-    const vc = getVcFromRequest(req);
-    const issuedAt = await getAwardsIssuedAt(vc);
-    const valid = isWithinYears(issuedAt, years);
-
-    const result = buildResult(
-      valid,
-      valid
-        ? `Awards VC issuedAt is within ${years} years.`
-        : `Awards VC issuedAt is not within ${years} years.`,
-      {
-        policy: `awards-issued-at-within-${years}-years`,
-        checkedValue: issuedAt ? issuedAt.toISOString() : null,
-      }
-    );
-
-    console.debug("result : ", result);
-
-    return sendPolicyResult(res, result);
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-
-    if (error.message === "Invalid years parameter.") {
-      return res.status(400).json({
-        valid: false,
-        message: "Invalid years parameter.",
-      });
-    }
-
-    return res.status(500).json({
-      valid: false,
-      message: "Internal server error.",
-    });
-  } finally {
-    console.debug("*** validateIssuedAtWithinYears end ***");
-  }
-};
-
-module.exports = {
-  validateIssuedAtWithinYears,
-};
-
-
-
-
-const {
-  parseYearMonth,
+  isPeriodAtLeastYears,
+  formatDate,
   formatYearMonth,
-  isYearMonthPeriodAtLeastYears,
-} = require("../utils/dateUtils");
-const { getYearsFromParams } = require("../utils/paramUtils");
-const {
-  getVcFromRequest,
-  getCredentialSubject,
-  buildResult,
-  sendPolicyResult,
-} = require("../utils/vcUtils");
-
-/**
- * Career VC から在職期間を取得する。
- *
- * from：在職開始年月（YYYY/MM）
- * to：在職終了年月（YYYY/MM）
- *
- * to が存在しない場合は、現在も在職中として現在年月を使用する。
- */
-const getEmploymentPeriod = async (vc) => {
-  console.debug("*** getEmploymentPeriod start ***");
-
-  try {
-    const credentialSubject = getCredentialSubject(vc);
-    const now = new Date();
-    const currentYearMonth = {
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
-    };
-
-    const result = {
-      fromYearMonth: parseYearMonth(credentialSubject.from),
-      toYearMonth: credentialSubject.to
-        ? parseYearMonth(credentialSubject.to)
-        : currentYearMonth,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-    throw error;
-  } finally {
-    console.debug("*** getEmploymentPeriod end ***");
-  }
 };
-
-/**
- * Career VC の在職期間が指定年数以上であるかを検証する。
- */
-const validateEmploymentPeriodAtLeastYears = async (req, res) => {
-  console.debug("*** validateEmploymentPeriodAtLeastYears start ***");
-
-  try {
-    const years = await getYearsFromParams(req);
-    const vc = getVcFromRequest(req);
-    const { fromYearMonth, toYearMonth } = await getEmploymentPeriod(vc);
-    const valid = isYearMonthPeriodAtLeastYears(fromYearMonth, toYearMonth, years);
-
-    const result = buildResult(
-      valid,
-      valid
-        ? `Career VC employment period is at least ${years} years.`
-        : `Career VC employment period is less than ${years} years.`,
-      {
-        policy: `career-employment-period-at-least-${years}-years`,
-        checkedValue: {
-          from: formatYearMonth(fromYearMonth),
-          to: formatYearMonth(toYearMonth),
-        },
-      }
-    );
-
-    console.debug("result : ", result);
-
-    return sendPolicyResult(res, result);
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-
-    if (error.message === "Invalid years parameter.") {
-      return res.status(400).json({
-        valid: false,
-        message: "Invalid years parameter.",
-      });
-    }
-
-    return res.status(500).json({
-      valid: false,
-      message: "Internal server error.",
-    });
-  } finally {
-    console.debug("*** validateEmploymentPeriodAtLeastYears end ***");
-  }
-};
-
-module.exports = {
-  validateEmploymentPeriodAtLeastYears,
-};
-
-
-
