@@ -1,21 +1,3 @@
-
-{
-  "name": "custom-verification-webhook-server",
-  "version": "1.0.0",
-  "description": "Express webhook server for custom VC verification",
-  "main": "app.js",
-  "scripts": {
-    "start": "node app.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2"
-  }
-}
-
-
-
-
-
 const express = require("express");
 const AwardsService = require("./src/services/AwardsService");
 const CareerService = require("./src/services/CareerService");
@@ -30,28 +12,16 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Awards VC：表彰日（issuedAt）が3年以内であることを検証する
+// Awards VC：表彰日（issuedAt）が指定年数以内であることを検証する
 app.post(
-  "/webhook/awards/issued-at/within-3-years",
-  AwardsService.validateIssuedAtWithinYears(3)
+  "/webhook/awards/issued-at/within-:years-years",
+  AwardsService.validateIssuedAtWithinYears
 );
 
-// Awards VC：表彰日（issuedAt）が5年以内であることを検証する
+// Career VC：在職期間（from ～ to）が指定年数以上であることを検証する
 app.post(
-  "/webhook/awards/issued-at/within-5-years",
-  AwardsService.validateIssuedAtWithinYears(5)
-);
-
-// Career VC：在職期間（from ～ to）が3年以上であることを検証する
-app.post(
-  "/webhook/career/employment-period/at-least-3-years",
-  CareerService.validateEmploymentPeriodAtLeastYears(3)
-);
-
-// Career VC：在職期間（from ～ to）が5年以上であることを検証する
-app.post(
-  "/webhook/career/employment-period/at-least-5-years",
-  CareerService.validateEmploymentPeriodAtLeastYears(5)
+  "/webhook/career/employment-period/at-least-:years-years",
+  CareerService.validateEmploymentPeriodAtLeastYears
 );
 
 // 未定義のエンドポイントにアクセスした場合
@@ -67,7 +37,9 @@ app.listen(PORT, () => {
 });
 
 
+
 const { parseDate, isWithinYears } = require("../utils/dateUtils");
+const { getYearsFromParams } = require("../utils/paramUtils");
 const {
   getVcFromRequest,
   getCredentialSubject,
@@ -111,41 +83,47 @@ const getAwardsIssuedAt = async (vc) => {
 /**
  * Awards VC の表彰日が指定年数以内であるかを検証する。
  */
-const validateIssuedAtWithinYears = (years) => {
-  return async (req, res) => {
-    console.debug("*** validateIssuedAtWithinYears start ***");
+const validateIssuedAtWithinYears = async (req, res) => {
+  console.debug("*** validateIssuedAtWithinYears start ***");
 
-    try {
-      const vc = getVcFromRequest(req);
-      const issuedAt = await getAwardsIssuedAt(vc);
-      const valid = isWithinYears(issuedAt, years);
+  try {
+    const years = await getYearsFromParams(req);
+    const vc = getVcFromRequest(req);
+    const issuedAt = await getAwardsIssuedAt(vc);
+    const valid = isWithinYears(issuedAt, years);
 
-      const result = buildResult(
-        valid,
-        valid
-          ? `Awards VC issuedAt is within ${years} years.`
-          : `Awards VC issuedAt is not within ${years} years.`,
-        {
-          policy: `awards-issued-at-within-${years}-years`,
-          checkedValue: issuedAt ? issuedAt.toISOString() : null,
-        }
-      );
+    const result = buildResult(
+      valid,
+      valid
+        ? `Awards VC issuedAt is within ${years} years.`
+        : `Awards VC issuedAt is not within ${years} years.`,
+      {
+        policy: `awards-issued-at-within-${years}-years`,
+        checkedValue: issuedAt ? issuedAt.toISOString() : null,
+      }
+    );
 
-      console.debug("result : ", result);
+    console.debug("result : ", result);
 
-      return sendPolicyResult(res, result);
-    } catch (error) {
-      console.error("error.message: ", error.message);
-      console.error("error.stack: ", error.stack);
+    return sendPolicyResult(res, result);
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
 
-      return res.status(500).json({
+    if (error.message === "Invalid years parameter.") {
+      return res.status(400).json({
         valid: false,
-        message: "Internal server error.",
+        message: "Invalid years parameter.",
       });
-    } finally {
-      console.debug("*** validateIssuedAtWithinYears end ***");
     }
-  };
+
+    return res.status(500).json({
+      valid: false,
+      message: "Internal server error.",
+    });
+  } finally {
+    console.debug("*** validateIssuedAtWithinYears end ***");
+  }
 };
 
 module.exports = {
@@ -154,7 +132,9 @@ module.exports = {
 
 
 
+
 const { parseDate, isPeriodAtLeastYears } = require("../utils/dateUtils");
+const { getYearsFromParams } = require("../utils/paramUtils");
 const {
   getVcFromRequest,
   getCredentialSubject,
@@ -196,44 +176,50 @@ const getEmploymentPeriod = async (vc) => {
 /**
  * Career VC の在職期間が指定年数以上であるかを検証する。
  */
-const validateEmploymentPeriodAtLeastYears = (years) => {
-  return async (req, res) => {
-    console.debug("*** validateEmploymentPeriodAtLeastYears start ***");
+const validateEmploymentPeriodAtLeastYears = async (req, res) => {
+  console.debug("*** validateEmploymentPeriodAtLeastYears start ***");
 
-    try {
-      const vc = getVcFromRequest(req);
-      const { fromDate, toDate } = await getEmploymentPeriod(vc);
-      const valid = isPeriodAtLeastYears(fromDate, toDate, years);
+  try {
+    const years = await getYearsFromParams(req);
+    const vc = getVcFromRequest(req);
+    const { fromDate, toDate } = await getEmploymentPeriod(vc);
+    const valid = isPeriodAtLeastYears(fromDate, toDate, years);
 
-      const result = buildResult(
-        valid,
-        valid
-          ? `Career VC employment period is at least ${years} years.`
-          : `Career VC employment period is less than ${years} years.`,
-        {
-          policy: `career-employment-period-at-least-${years}-years`,
-          checkedValue: {
-            from: fromDate ? fromDate.toISOString() : null,
-            to: toDate ? toDate.toISOString() : null,
-          },
-        }
-      );
+    const result = buildResult(
+      valid,
+      valid
+        ? `Career VC employment period is at least ${years} years.`
+        : `Career VC employment period is less than ${years} years.`,
+      {
+        policy: `career-employment-period-at-least-${years}-years`,
+        checkedValue: {
+          from: fromDate ? fromDate.toISOString() : null,
+          to: toDate ? toDate.toISOString() : null,
+        },
+      }
+    );
 
-      console.debug("result : ", result);
+    console.debug("result : ", result);
 
-      return sendPolicyResult(res, result);
-    } catch (error) {
-      console.error("error.message: ", error.message);
-      console.error("error.stack: ", error.stack);
+    return sendPolicyResult(res, result);
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
 
-      return res.status(500).json({
+    if (error.message === "Invalid years parameter.") {
+      return res.status(400).json({
         valid: false,
-        message: "Internal server error.",
+        message: "Invalid years parameter.",
       });
-    } finally {
-      console.debug("*** validateEmploymentPeriodAtLeastYears end ***");
     }
-  };
+
+    return res.status(500).json({
+      valid: false,
+      message: "Internal server error.",
+    });
+  } finally {
+    console.debug("*** validateEmploymentPeriodAtLeastYears end ***");
+  }
 };
 
 module.exports = {
@@ -286,6 +272,37 @@ module.exports = {
   parseDate,
   isWithinYears,
   isPeriodAtLeastYears,
+};
+
+
+/**
+ * URL パラメータから年数を取得する。
+ */
+const getYearsFromParams = async (req) => {
+  console.debug("*** getYearsFromParams start ***");
+
+  try {
+    const years = Number(req.params.years);
+
+    if (!Number.isInteger(years) || years <= 0) {
+      throw new Error("Invalid years parameter.");
+    }
+
+    const result = years;
+    console.debug("result : ", result);
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** getYearsFromParams end ***");
+  }
+};
+
+module.exports = {
+  getYearsFromParams,
 };
 
 
@@ -347,6 +364,9 @@ module.exports = {
   buildResult,
   sendPolicyResult,
 };
+
+
+
 
 
 
