@@ -1,28 +1,78 @@
 /**
- * URL パラメータから年数を取得する
+ * リクエストボディから VC 情報を取得する
  */
-const getYearsFromParams = (yearsValue) => {
-  console.debug("*** getYearsFromParams start ***");
+const getVcFromRequest = (req) => {
+  console.debug("*** getVcFromRequest start ***");
 
   try {
-    const years = Number(yearsValue);
+    const body = req.body || {};
 
-    if (!Number.isInteger(years) || years <= 0) {
-      throw new Error(`Invalid years parameter: ${yearsValue}`);
-    }
+    console.debug("request body : ", JSON.stringify(body, null, 2));
 
-    console.debug("years : ", years);
+    const result =
+      body.vc ||
+      body.credential ||
+      body.verifiableCredential ||
+      body.presentedCredential ||
+      body.presentedCredentials?.[0] ||
+      body.credentialData ||
+      body.data?.vc ||
+      body.data?.credential ||
+      body.data?.verifiableCredential ||
+      body.data?.presentedCredential ||
+      body.data?.presentedCredentials?.[0] ||
+      body.data?.credentialData ||
+      body;
 
-    return years;
+    console.debug("vc : ", JSON.stringify(result, null, 2));
+
+    return result;
   } catch (error) {
     console.error("error.message: ", error.message);
     console.error("error.stack: ", error.stack);
     throw error;
   } finally {
-    console.debug("*** getYearsFromParams end ***");
+    console.debug("*** getVcFromRequest end ***");
+  }
+};
+
+/**
+ * VC から credentialSubject を取得する
+ */
+const getCredentialSubject = (vc) => {
+  console.debug("*** getCredentialSubject start ***");
+
+  try {
+    const result =
+      vc.credentialSubject ||
+      vc.vc?.credentialSubject ||
+      vc.credential?.credentialSubject ||
+      vc.verifiableCredential?.credentialSubject ||
+      vc.presentedCredential?.credentialSubject ||
+      vc.presentedCredentials?.[0]?.credentialSubject ||
+      vc.credentialData?.credentialSubject ||
+      vc.data?.credentialSubject ||
+      vc.data?.vc?.credentialSubject ||
+      vc.data?.credential?.credentialSubject ||
+      vc.data?.verifiableCredential?.credentialSubject ||
+      vc.data?.presentedCredential?.credentialSubject ||
+      vc.data?.presentedCredentials?.[0]?.credentialSubject ||
+      vc.data?.credentialData?.credentialSubject ||
+      {};
+
+    console.debug("credentialSubject : ", JSON.stringify(result, null, 2));
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** getCredentialSubject end ***");
   }
 };
 
 module.exports = {
-  getYearsFromParams,
+  getVcFromRequest,
+  getCredentialSubject,
 };
