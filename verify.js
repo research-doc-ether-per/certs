@@ -1,173 +1,258 @@
 {
   "credentials": {
-    "Awards": {
-      "jwt_vc_json": {
-        "true": {
-          "id": "Awards_JWT_VERIFICATION_TRUE",
-          "format": "jwt_vc_json",
-          "types": ["Awards"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Awards_JWT_VERIFICATION_TRUE"]
-            }
-          ]
-        },
-        "false": {
-          "id": "Awards_JWT_VERIFICATION_FALSE",
-          "format": "jwt_vc_json",
-          "types": ["Awards"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Awards_JWT_VERIFICATION_FALSE"]
-            }
-          ]
-        }
+    "Awards_jwt_vc_json": {
+      "true": {
+        "id": "Awards_JWT_VERIFICATION_TRUE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Awards"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Awards_JWT_VERIFICATION_TRUE"
+            ]
+          }
+        ]
       },
-      "dc+sd-jwt": {
-        "true": {
-          "id": "Awards_SD_JWT_VERIFICATION_TRUE",
-          "format": "dc+sd-jwt",
-          "meta": {
-            "vct_values": ["http://10.0.2.15:3200/vct/Awards"]
-          },
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Awards_SD_JWT_VERIFICATION_TRUE"]
-            },
-            {
-              "path": ["credentialSubject", "organization"]
-            },
-            {
-              "path": ["credentialSubject", "issuedAt"]
-            }
-          ]
-        },
-        "false": {
-          "id": "Awards_SD_JWT_VERIFICATION_FALSE",
-          "format": "dc+sd-jwt",
-          "meta": {
-            "vct_values": ["http://10.0.2.15:3200/vct/Awards"]
-          },
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Awards_SD_JWT_VERIFICATION_FALSE"]
-            },
-            {
-              "path": ["credentialSubject", "organization"]
-            },
-            {
-              "path": ["credentialSubject", "issuedAt"]
-            }
-          ]
-        }
+      "false": {
+        "id": "Awards_JWT_VERIFICATION_FALSE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Awards"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Awards_JWT_VERIFICATION_FALSE"
+            ]
+          }
+        ]
       }
     },
-    "Career": {
-      "jwt_vc_json": {
-        "true": {
-          "id": "Career_JWT_VERIFICATION_TRUE",
-          "format": "jwt_vc_json",
-          "types": ["Career"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Career_JWT_VERIFICATION_TRUE"]
-            }
+
+    "Awards_dc+sd-jwt": {
+      "true": {
+        "id": "Awards_SD_JWT_VERIFICATION_TRUE",
+        "format": "dc+sd-jwt",
+        "meta": {
+          "vct_values": [
+            "http://10.0.2.15:3200/vct/Awards"
           ]
         },
-        "false": {
-          "id": "Career_JWT_VERIFICATION_FALSE",
-          "format": "jwt_vc_json",
-          "types": ["Career"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Career_JWT_VERIFICATION_FALSE"]
-            }
-          ]
-        }
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Awards_SD_JWT_VERIFICATION_TRUE"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "organization"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "issuedAt"
+            ]
+          }
+        ]
       },
-      "dc+sd-jwt": {
-        "true": {
-          "id": "Career_SD_JWT_VERIFICATION_TRUE",
-          "format": "dc+sd-jwt",
-          "meta": {
-            "vct_values": ["http://10.0.2.15:3200/vct/Career"]
-          },
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Career_SD_JWT_VERIFICATION_TRUE"]
-            },
-            {
-              "path": ["credentialSubject", "category"]
-            },
-            {
-              "path": ["credentialSubject", "position"]
-            }
+      "false": {
+        "id": "Awards_SD_JWT_VERIFICATION_FALSE",
+        "format": "dc+sd-jwt",
+        "meta": {
+          "vct_values": [
+            "http://10.0.2.15:3200/vct/Awards"
           ]
         },
-        "false": {
-          "id": "Career_SD_JWT_VERIFICATION_FALSE",
-          "format": "dc+sd-jwt",
-          "meta": {
-            "vct_values": ["http://10.0.2.15:3200/vct/Career"]
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Awards_SD_JWT_VERIFICATION_FALSE"
+            ]
           },
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Career_SD_JWT_VERIFICATION_FALSE"]
-            },
-            {
-              "path": ["credentialSubject", "category"]
-            },
-            {
-              "path": ["credentialSubject", "position"]
-            }
-          ]
-        }
+          {
+            "path": [
+              "credentialSubject",
+              "organization"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "issuedAt"
+            ]
+          }
+        ]
       }
     },
-    "Qualification": {
-      "jwt_vc_json": {
-        "true": {
-          "id": "Qualification_JWT_VERIFICATION_TRUE",
-          "format": "jwt_vc_json",
-          "types": ["Qualification"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Qualification_JWT_VERIFICATION_TRUE"]
-            }
+
+    "Career_jwt_vc_json": {
+      "true": {
+        "id": "Career_JWT_VERIFICATION_TRUE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Career"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Career_JWT_VERIFICATION_TRUE"
+            ]
+          }
+        ]
+      },
+      "false": {
+        "id": "Career_JWT_VERIFICATION_FALSE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Career"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Career_JWT_VERIFICATION_FALSE"
+            ]
+          }
+        ]
+      }
+    },
+
+    "Career_dc+sd-jwt": {
+      "true": {
+        "id": "Career_SD_JWT_VERIFICATION_TRUE",
+        "format": "dc+sd-jwt",
+        "meta": {
+          "vct_values": [
+            "http://10.0.2.15:3200/vct/Career"
           ]
         },
-        "false": {
-          "id": "Qualification_JWT_VERIFICATION_FALSE",
-          "format": "jwt_vc_json",
-          "types": ["Qualification"],
-          "claims": [
-            {
-              "path": ["credentialSubject", "certName"],
-              "values": ["Qualification_JWT_VERIFICATION_FALSE"]
-            }
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Career_SD_JWT_VERIFICATION_TRUE"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "category"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "position"
+            ]
+          }
+        ]
+      },
+      "false": {
+        "id": "Career_SD_JWT_VERIFICATION_FALSE",
+        "format": "dc+sd-jwt",
+        "meta": {
+          "vct_values": [
+            "http://10.0.2.15:3200/vct/Career"
           ]
-        }
+        },
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Career_SD_JWT_VERIFICATION_FALSE"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "category"
+            ]
+          },
+          {
+            "path": [
+              "credentialSubject",
+              "position"
+            ]
+          }
+        ]
+      }
+    },
+
+    "Qualification_jwt_vc_json": {
+      "true": {
+        "id": "Qualification_JWT_VERIFICATION_TRUE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Qualification"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Qualification_JWT_VERIFICATION_TRUE"
+            ]
+          }
+        ]
+      },
+      "false": {
+        "id": "Qualification_JWT_VERIFICATION_FALSE",
+        "format": "jwt_vc_json",
+        "types": [
+          "Qualification"
+        ],
+        "claims": [
+          {
+            "path": [
+              "credentialSubject",
+              "certName"
+            ],
+            "values": [
+              "Qualification_JWT_VERIFICATION_FALSE"
+            ]
+          }
+        ]
       }
     }
   },
-  "globalVcPolicies": [
-    {
-      "policy": "signature"
-    },
-    {
-      "policy": "credential-status"
-    }
-  ],
-  "specificVcPolicies": {
+
+  "specific_vc_policies": {
     "Awards_jwt_vc_json": [
       {
         "policy": "regex",
@@ -184,14 +269,15 @@
         "allowNull": false
       }
     ],
-    "Awards_dc_sd_jwt": [
+
+    "Awards_dc+sd-jwt": [
       {
         "policy": "vct-integrity"
       },
       {
         "policy": "regex",
         "path": "$.credentialSubject.certName",
-        "regex": "^Awards_SD_JWT_VERIFICATION_.*$",
+        "regex": "^Awards_SD_JWT_VERIFICATION_(TRUE|FALSE)$",
         "allowNull": false
       },
       {
@@ -211,6 +297,7 @@
         "url": "http://10.0.2.15:3100/webhook/awards/issued-at/within-3-years"
       }
     ],
+
     "Career_jwt_vc_json": [
       {
         "policy": "regex",
@@ -267,19 +354,22 @@
               ]
             }
           },
-          "required": ["credentialSubject"]
+          "required": [
+            "credentialSubject"
+          ]
         },
         "defaultType": null
       }
     ],
-    "Career_dc_sd_jwt": [
+
+    "Career_dc+sd-jwt": [
       {
         "policy": "vct-integrity"
       },
       {
         "policy": "regex",
         "path": "$.credentialSubject.certName",
-        "regex": "^Career_SD_JWT_VERIFICATION_.*$",
+        "regex": "^Career_SD_JWT_VERIFICATION_(TRUE|FALSE)$",
         "allowNull": false
       },
       {
@@ -305,6 +395,7 @@
         "url": "http://10.0.2.15:3100/webhook/career/employment-period/at-least-3-years"
       }
     ],
+
     "Qualification_jwt_vc_json": [
       {
         "policy": "regex",
@@ -325,18 +416,6 @@
         "value": 3,
         "unit": "years",
         "allowNull": false
-      }
-    ]
-  },
-  "vpPolicies": {
-    "jwt_vc_json": [
-      {
-        "policy": "presentation-definition"
-      }
-    ],
-    "dc+sd-jwt": [
-      {
-        "policy": "presentation-definition"
       }
     ]
   }
