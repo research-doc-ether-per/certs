@@ -121,7 +121,9 @@ node openid4vp-credential-verification.js
 
 ## 9.2 確認結果
 
-### 9.2.1 Policy 一覧および今回の確認状況
+### 9.2.1 VC Policy 一覧および今回の確認状況
+
+VC Policy は、Credential 自体の署名、有効期限、claim、Credential Status などを検証するために使用します。
 
 - [参照: verifier2 available-policies](https://docs.walt.id/community-stack/verifier2/policies/available-policies)
 
@@ -141,13 +143,21 @@ node openid4vp-credential-verification.js
 | `webhook` | 外部 HTTP endpoint に検証を委譲 | ○ | ○ |
 | `date-within` | claim の日付が現在から指定期間内かを検証 | カスタム | ○ |
 
-今回未確認の標準 Policy は以下の 3 つです。
+### 9.2.2 標準搭載 VP Policy
 
-- `revoked-status-list`
-- `vical`
-- `etsi-trust-list`
+VP Policy は、Holder が Verification Session 向けに生成した Presentation の audience、nonce、Holder Binding などを検証するために使用します。
 
-### 9.2.2 DCQL と複数 Credential の組み合わせ
+| 形式 | Policy | 主な検証内容 | 今回確認 |
+|---|---|---|---:|
+| `jwt_vc_json` | `jwt_vc_json/audience-check` | Presentation が対象 Verifier 向けに生成されていることを確認 | ○ |
+| `jwt_vc_json` | `jwt_vc_json/nonce-check` | nonce を検証し、リプレイ攻撃を防止 | ○ |
+| `jwt_vc_json` | `jwt_vc_json/envelope_signature` | Holder が生成した Presentation の署名を検証 | ○ |
+| `dc+sd-jwt` | `dc+sd-jwt/audience-check` | Presentation が対象 Verifier 向けに生成されていることを確認 | ○ |
+| `dc+sd-jwt` | `dc+sd-jwt/nonce-check` | nonce を検証し、リプレイ攻撃を防止 | ○ |
+| `dc+sd-jwt` | `dc+sd-jwt/kb-jwt_signature` | Key Binding JWT の署名を検証し、Holder Binding を確認 | ○ |
+| `dc+sd-jwt` | `dc+sd-jwt/sd_hash-check` | Key Binding JWT と SD-JWT の整合性を検証 | ○ |
+
+### 9.2.3 DCQL と複数 Credential の組み合わせ
 
 DCQL は、Wallet に対して「どの Credential / claim を提示させるか」を指定するために使用します。
 
@@ -162,78 +172,34 @@ DCQL は、Wallet に対して「どの Credential / claim を提示させるか
 | A OR B | `credential_sets.options: [[A], [B]]` |
 | A AND (B OR C) | `credential_sets.options: [[A, B], [A, C]]` |
 
-`credential_sets` は Credential の存在・組み合わせ条件を指定するための設定です。  
+`credential_sets` は、複数の Credential query のうち、どの組み合わせを満たす必要があるかを指定するための設定です。  
 Credential の内容自体の検証は、`vc_policies` または `specific_vc_policies` で行います。
 
-### 9.2.3 Global VC Policy と Specific VC Policy
-
-複数 Credential を検証する場合、VC Policy は以下の 2 種類に分けて設定できます。
+### 9.2.4 Global VC Policy と Specific VC Policy
 
 | 設定 | 適用範囲 | 用途 |
 |---|---|---|
 | `vc_policies` | 提示された Credential に共通して適用 | `signature`, `expiration`, `credential-status` など |
-| `specific_vc_policies` | 指定した Credential のみに適用 | `regex`, `date-within`, `webhook` など Credential 固有の条件 |
+| `specific_vc_policies` | Credential ごとに異なる Policy を個別に適用 | `regex`, `date-within`, `webhook` など Credential 固有の条件 |
 
-#### Global VC Policy
+基本的な使い分けは以下のとおりです。
 
-提示された Credential に共通する検証を設定します。
+- 単一 Credential の検証  
+  → 通常は `vc_policies` を使用します。
 
-```json
-{
-  "vc_policies": [
-    {
-      "policy": "signature"
-    },
-    {
-      "policy": "expiration"
-    },
-    {
-      "policy": "credential-status"
-    }
-  ]
-}
-```
+- 複数 Credential の検証で、すべての Credential に同じ Policy を適用する場合  
+  → `vc_policies` を使用します。
 
-#### Specific VC Policy
+- 複数 Credential の検証で、Credential ごとに異なる Policy を適用する場合  
+  → `specific_vc_policies` を使用します。
 
-Credential ごとに異なる検証条件を設定する場合は、`specific_vc_policies` を使用します。
+`specific_vc_policies` と `credential_sets` では、DCQL の `credentials[].id` を対象 Credential の識別子として使用します。
 
-```json
-{
-  "specific_vc_policies": {
-    "Awards_JWT_VERIFICATION_TRUE": [
-      {
-        "policy": "regex",
-        "path": "$.credentialSubject.type",
-        "regex": "^award$"
-      },
-      {
-        "policy": "date-within",
-        "path": "$.credentialSubject.issuedAt",
-        "format": "yyyy/MM/dd",
-        "value": 3,
-        "unit": "years"
-      }
-    ]
-  }
-}
-```
+そのため、`credential_sets.options` と `specific_vc_policies` の key には、対象となる `credentials[].id` と同じ ID を指定します。
 
-`specific_vc_policies` の key には、DCQL の `credentials[].id` と同じ Credential ID を指定します。
+### 9.2.5 標準 Policy だけでは対応できない条件
 
-また、複数 Credential の組み合わせを `credential_sets` で指定する場合も、`credential_sets.options` には同じ Credential ID を使用します。
-
-```text
-credentials[].id
-      ├─ credential_sets.options
-      └─ specific_vc_policies
-```
-
-このため、上記 3 箇所で使用する Credential ID は一致させる必要があります。
-
-### 9.2.4 標準 Policy だけでは対応できない条件
-
-標準 Policy だけでは対応できない業務条件については、`webhook` またはカスタム Kotlin Policy で対応します。
+標準 Policy だけでは対応できない業務条件については、`webhook` または Custom Kotlin Policy で対応します。
 
 | 要件例 | 対応方法 |
 |---|---|
@@ -245,3 +211,15 @@ credentials[].id
 | 任意の業務ルール | `webhook` / Custom Kotlin Policy |
 
 今回、標準 Policy では対応できない日付条件を Verifier2 内で検証するため、Custom Kotlin Policy として `date-within` を追加し、動作確認を実施しました。
+
+また、以下の条件については Custom Verification Webhook Server を作成し、`webhook` Policy による動作確認を実施しました。
+
+- Career の `to - from >= 3年`
+- Awards の `issuedAt` が現在から N 年以内
+
+### 9.2.6 Webhook と Custom Kotlin Policy の違い
+
+| 方式 | 実装場所 | Verifier API2 の再ビルド | 向くケース |
+|---|---|---|---|
+| `webhook` | 外部 Webhook Server / 業務 API | 不要 | DB 照会、既存サービス連携、頻繁に変更される業務ルール |
+| Custom Kotlin Policy | `waltid-verification-policies2` | 必要 | 外部通信を必要とせず、Verifier 内で完結する固定的な検証ロジック |
