@@ -1,220 +1,343 @@
-const verificationCredentialDataList = [
-  {
-    credentialType: 'Awards',
-    format: 'jwt_vc_json',
-    expectedResult: true,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Awards_JWT_VERIFICATION_TRUE',
-        certExplanation: 'JWT VC 用。regex / issuedAt format / date-within policy の正常系確認用。',
-        image: null,
-        organization: 'awards-jwt-verification-true-org',
-        issuedAt: '2025/10/01',
-      },
-    },
-  },
-  {
-    credentialType: 'Awards',
-    format: 'jwt_vc_json',
-    expectedResult: false,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Awards_JWT_VERIFICATION_FALSE',
-        certExplanation: 'JWT VC 用。regex / issuedAt format / date-within policy の異常系確認用。',
-        image: null,
-        organization: 'awards-jwt-verification-false-org',
-        issuedAt: '2020/10/01',
-      },
-    },
-  },
-  {
-    credentialType: 'Awards',
-    format: 'dc+sd-jwt',
-    expectedResult: true,
-    credentialData: {
-      vct: 'http://10.0.2.15:3200/vct/Awards',
-      'vct#integrity': 'sha256-xxxxxxxx',
-      credentialSubject: {
-        certName: 'Awards_SD_JWT_VERIFICATION_TRUE',
-        certExplanation: 'SD-JWT VC 用。Awards issuedAt webhook policy 正常系、および vct-integrity policy 確認用。',
-        image: null,
-        organization: 'awards-sdjwt-verification-true-org',
-        issuedAt: '2025/10/01',
-      },
-    },
-    selectiveDisclosure: {
-      fields: {
-        credentialSubject: {
-          sd: false,
-          children: {
-            fields: {
-              organization: { sd: true },
-              issuedAt: { sd: true },
-            },
-          },
+{
+  "credentials": {
+    "Awards": {
+      "jwt_vc_json": {
+        "true": {
+          "id": "Awards_JWT_VERIFICATION_TRUE",
+          "format": "jwt_vc_json",
+          "types": ["Awards"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Awards_JWT_VERIFICATION_TRUE"]
+            }
+          ]
         },
+        "false": {
+          "id": "Awards_JWT_VERIFICATION_FALSE",
+          "format": "jwt_vc_json",
+          "types": ["Awards"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Awards_JWT_VERIFICATION_FALSE"]
+            }
+          ]
+        }
       },
-    },
-  },
-  {
-    credentialType: 'Awards',
-    format: 'dc+sd-jwt',
-    expectedResult: false,
-    credentialData: {
-      vct: 'http://10.0.2.15:3200/vct/Awards',
-      'vct#integrity': 'sha256-xxxxxxxx',
-      credentialSubject: {
-        certName: 'Awards_SD_JWT_VERIFICATION_FALSE',
-        certExplanation: 'SD-JWT VC 用。Awards issuedAt webhook policy 異常系、および vct-integrity policy 確認用。',
-        image: null,
-        organization: 'awards-sdjwt-verification-false-org',
-        issuedAt: '2020/10/01',
-      },
-    },
-    selectiveDisclosure: {
-      fields: {
-        credentialSubject: {
-          sd: false,
-          children: {
-            fields: {
-              organization: { sd: true },
-              issuedAt: { sd: true },
-            },
+      "dc+sd-jwt": {
+        "true": {
+          "id": "Awards_SD_JWT_VERIFICATION_TRUE",
+          "format": "dc+sd-jwt",
+          "meta": {
+            "vct_values": ["http://10.0.2.15:3200/vct/Awards"]
           },
-        },
-      },
-    },
-  },
-  {
-    credentialType: 'Career',
-    format: 'jwt_vc_json',
-    expectedResult: true,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Career_JWT_VERIFICATION_TRUE',
-        certExplanation: 'JWT VC 用。category / position regex policy、および schema policy の正常系確認用。',
-        image: null,
-        organization: 'test02',
-        type: 'business-career-jwt',
-        category: 'sales',
-        position: 'director',
-        from: '2020/10',
-        to: '2025/10',
-      },
-    },
-  },
-  {
-    credentialType: 'Career',
-    format: 'jwt_vc_json',
-    expectedResult: false,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Career_JWT_VERIFICATION_FALSE',
-        certExplanation: 'JWT VC 用。position regex policy の異常系確認用。',
-        image: null,
-        organization: 'test02',
-        type: 'business-career-jwt',
-        category: 'sales',
-        position: 'staff',
-        from: '2020/10',
-        to: '2025/10',
-      },
-    },
-  },
-  {
-    credentialType: 'Career',
-    format: 'dc+sd-jwt',
-    expectedResult: true,
-    credentialData: {
-      vct: 'http://10.0.2.15:3200/vct/Career',
-      'vct#integrity': 'sha256-xxxxxxxx',
-      credentialSubject: {
-        certName: 'Career_SD_JWT_VERIFICATION_TRUE',
-        certExplanation: 'SD-JWT VC 用。Career employment-period webhook policy 正常系、および vct-integrity policy 確認用。',
-        image: null,
-        organization: 'test03',
-        type: 'business-career-sdjwt',
-        category: 'engineering',
-        position: 'manager',
-        from: '2020/10',
-        to: '2025/10',
-      },
-    },
-    selectiveDisclosure: {
-      fields: {
-        credentialSubject: {
-          sd: false,
-          children: {
-            fields: {
-              category: { sd: true },
-              position: { sd: true },
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Awards_SD_JWT_VERIFICATION_TRUE"]
             },
-          },
-        },
-      },
-    },
-  },
-  {
-    credentialType: 'Career',
-    format: 'dc+sd-jwt',
-    expectedResult: false,
-    credentialData: {
-      vct: 'http://10.0.2.15:3200/vct/Career',
-      'vct#integrity': 'sha256-xxxxxxxx',
-      credentialSubject: {
-        certName: 'Career_SD_JWT_VERIFICATION_FALSE',
-        certExplanation: 'SD-JWT VC 用。Career employment-period webhook policy 異常系、および vct-integrity policy 確認用。',
-        image: null,
-        organization: 'test03',
-        type: 'business-career-sdjwt',
-        category: 'engineering',
-        position: 'manager',
-        from: '2025/10',
-        to: '2026/10',
-      },
-    },
-    selectiveDisclosure: {
-      fields: {
-        credentialSubject: {
-          sd: false,
-          children: {
-            fields: {
-              category: { sd: true },
-              position: { sd: true },
+            {
+              "path": ["credentialSubject", "organization"]
             },
-          },
+            {
+              "path": ["credentialSubject", "issuedAt"]
+            }
+          ]
         },
-      },
+        "false": {
+          "id": "Awards_SD_JWT_VERIFICATION_FALSE",
+          "format": "dc+sd-jwt",
+          "meta": {
+            "vct_values": ["http://10.0.2.15:3200/vct/Awards"]
+          },
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Awards_SD_JWT_VERIFICATION_FALSE"]
+            },
+            {
+              "path": ["credentialSubject", "organization"]
+            },
+            {
+              "path": ["credentialSubject", "issuedAt"]
+            }
+          ]
+        }
+      }
     },
-  },
-  {
-    credentialType: 'Qualification',
-    format: 'jwt_vc_json',
-    expectedResult: true,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Qualification_JWT_VERIFICATION_TRUE',
-        certExplanation: 'JWT VC 用。issuedAt date-within policy の正常系確認用。',
-        image: null,
-        organization: 'qualification-jwt-verification-true-org',
-        type: 'qualifications',
-        issuedAt: '2025/10/01',
+    "Career": {
+      "jwt_vc_json": {
+        "true": {
+          "id": "Career_JWT_VERIFICATION_TRUE",
+          "format": "jwt_vc_json",
+          "types": ["Career"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Career_JWT_VERIFICATION_TRUE"]
+            }
+          ]
+        },
+        "false": {
+          "id": "Career_JWT_VERIFICATION_FALSE",
+          "format": "jwt_vc_json",
+          "types": ["Career"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Career_JWT_VERIFICATION_FALSE"]
+            }
+          ]
+        }
       },
+      "dc+sd-jwt": {
+        "true": {
+          "id": "Career_SD_JWT_VERIFICATION_TRUE",
+          "format": "dc+sd-jwt",
+          "meta": {
+            "vct_values": ["http://10.0.2.15:3200/vct/Career"]
+          },
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Career_SD_JWT_VERIFICATION_TRUE"]
+            },
+            {
+              "path": ["credentialSubject", "category"]
+            },
+            {
+              "path": ["credentialSubject", "position"]
+            }
+          ]
+        },
+        "false": {
+          "id": "Career_SD_JWT_VERIFICATION_FALSE",
+          "format": "dc+sd-jwt",
+          "meta": {
+            "vct_values": ["http://10.0.2.15:3200/vct/Career"]
+          },
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Career_SD_JWT_VERIFICATION_FALSE"]
+            },
+            {
+              "path": ["credentialSubject", "category"]
+            },
+            {
+              "path": ["credentialSubject", "position"]
+            }
+          ]
+        }
+      }
     },
+    "Qualification": {
+      "jwt_vc_json": {
+        "true": {
+          "id": "Qualification_JWT_VERIFICATION_TRUE",
+          "format": "jwt_vc_json",
+          "types": ["Qualification"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Qualification_JWT_VERIFICATION_TRUE"]
+            }
+          ]
+        },
+        "false": {
+          "id": "Qualification_JWT_VERIFICATION_FALSE",
+          "format": "jwt_vc_json",
+          "types": ["Qualification"],
+          "claims": [
+            {
+              "path": ["credentialSubject", "certName"],
+              "values": ["Qualification_JWT_VERIFICATION_FALSE"]
+            }
+          ]
+        }
+      }
+    }
   },
-  {
-    credentialType: 'Qualification',
-    format: 'jwt_vc_json',
-    expectedResult: false,
-    credentialData: {
-      credentialSubject: {
-        certName: 'Qualification_JWT_VERIFICATION_FALSE',
-        certExplanation: 'JWT VC 用。issuedAt date-within policy の異常系確認用。',
-        image: null,
-        organization: 'qualification-jwt-verification-false-org',
-        type: 'qualifications',
-        issuedAt: '2020/10/01',
+  "globalVcPolicies": [
+    {
+      "policy": "signature"
+    },
+    {
+      "policy": "credential-status"
+    }
+  ],
+  "specificVcPolicies": {
+    "Awards_jwt_vc_json": [
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.issuedAt",
+        "regex": "^\\d{4}/(0[1-9]|1[0-2])/(0[1-9]|[12]\\d|3[01])$",
+        "allowNull": false
       },
-    },
+      {
+        "policy": "date-within",
+        "path": "$.credentialSubject.issuedAt",
+        "format": "yyyy/MM/dd",
+        "value": 3,
+        "unit": "years",
+        "allowNull": false
+      }
+    ],
+    "Awards_dc_sd_jwt": [
+      {
+        "policy": "vct-integrity"
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.certName",
+        "regex": "^Awards_SD_JWT_VERIFICATION_.*$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.organization",
+        "regex": "^awards-sdjwt-verification-(true|false)-org$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.issuedAt",
+        "regex": "^\\d{4}/(0[1-9]|1[0-2])/(0[1-9]|[12]\\d|3[01])$",
+        "allowNull": false
+      },
+      {
+        "policy": "webhook",
+        "url": "http://10.0.2.15:3100/webhook/awards/issued-at/within-3-years"
+      }
+    ],
+    "Career_jwt_vc_json": [
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.category",
+        "regex": "^sales$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.position",
+        "regex": "^director$",
+        "allowNull": false
+      },
+      {
+        "policy": "schema",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "credentialSubject": {
+              "type": "object",
+              "properties": {
+                "organization": {
+                  "type": "string",
+                  "const": "test02"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "business-career-jwt"
+                },
+                "category": {
+                  "type": "string",
+                  "const": "sales"
+                },
+                "position": {
+                  "type": "string",
+                  "const": "director"
+                },
+                "from": {
+                  "type": "string",
+                  "const": "2020/10"
+                },
+                "to": {
+                  "type": "string",
+                  "const": "2025/10"
+                }
+              },
+              "required": [
+                "organization",
+                "type",
+                "category",
+                "position",
+                "from",
+                "to"
+              ]
+            }
+          },
+          "required": ["credentialSubject"]
+        },
+        "defaultType": null
+      }
+    ],
+    "Career_dc_sd_jwt": [
+      {
+        "policy": "vct-integrity"
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.certName",
+        "regex": "^Career_SD_JWT_VERIFICATION_.*$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.organization",
+        "regex": "^test03$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.category",
+        "regex": "^engineering$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.position",
+        "regex": "^manager$",
+        "allowNull": false
+      },
+      {
+        "policy": "webhook",
+        "url": "http://10.0.2.15:3100/webhook/career/employment-period/at-least-3-years"
+      }
+    ],
+    "Qualification_jwt_vc_json": [
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.type",
+        "regex": "^qualifications$",
+        "allowNull": false
+      },
+      {
+        "policy": "regex",
+        "path": "$.credentialSubject.issuedAt",
+        "regex": "^\\d{4}/(0[1-9]|1[0-2])/(0[1-9]|[12]\\d|3[01])$",
+        "allowNull": false
+      },
+      {
+        "policy": "date-within",
+        "path": "$.credentialSubject.issuedAt",
+        "format": "yyyy/MM/dd",
+        "value": 3,
+        "unit": "years",
+        "allowNull": false
+      }
+    ]
   },
-];
+  "vpPolicies": {
+    "jwt_vc_json": [
+      {
+        "policy": "presentation-definition"
+      }
+    ],
+    "dc+sd-jwt": [
+      {
+        "policy": "presentation-definition"
+      }
+    ]
+  }
+}
