@@ -2,8 +2,8 @@ type = "redis"
 
 nodes = [
   {
-    host = "10.0.2.15"
-    port = 6380
+    host = ${ISSUER_VALKEY_HOST}
+    port = ${ISSUER_VALKEY_PORT}
   }
 ]
 
