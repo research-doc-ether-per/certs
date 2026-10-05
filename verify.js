@@ -1,3 +1,11 @@
-ISSUER_VALKEY_PORT=6380
-VERIFIER_VALKEY_PORT=6381
+type = "redis"
 
+nodes = [
+  {
+    host = "10.0.2.15"
+    port = 6380
+  }
+]
+
+user = ""
+password = ""
