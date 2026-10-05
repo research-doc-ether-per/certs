@@ -1,19 +1,18 @@
-
 issuer-valkey:
   image: valkey/valkey:${VERSION_VALKEY:-7.2}
   profiles:
     - identity
   container_name: issuer-valkey
   healthcheck:
-    test: [ "CMD", "valkey-cli", "-p", "6380", "ping" ]
+    test: [ "CMD", "valkey-cli", "-p", "${ISSUER_VALKEY_PORT}", "ping" ]
     interval: 5s
     timeout: 3s
     retries: 5
     start_period: 5s
   restart: always
-  command: ["valkey-server", "--bind", "0.0.0.0", "--port", "6380"]
+  command: ["valkey-server", "--bind", "0.0.0.0", "--port", "${ISSUER_VALKEY_PORT}"]
   ports:
-    - "6380:6380"
+    - "${ISSUER_VALKEY_PORT}:${ISSUER_VALKEY_PORT}"
   volumes:
     - issuer_valkey_data:/data
 
@@ -23,18 +22,17 @@ verifier-valkey:
     - identity
   container_name: verifier-valkey
   healthcheck:
-    test: [ "CMD", "valkey-cli", "-p", "6381", "ping" ]
+    test: [ "CMD", "valkey-cli", "-p", "${VERIFIER_VALKEY_PORT}", "ping" ]
     interval: 5s
     timeout: 3s
     retries: 5
     start_period: 5s
   restart: always
-  command: ["valkey-server", "--bind", "0.0.0.0", "--port", "6381"]
+  command: ["valkey-server", "--bind", "0.0.0.0", "--port", "${VERIFIER_VALKEY_PORT}"]
   ports:
-    - "6381:6381"
+    - "${VERIFIER_VALKEY_PORT}:${VERIFIER_VALKEY_PORT}"
   volumes:
     - verifier_valkey_data:/data
-
 
 volumes:
   issuer_valkey_data:
