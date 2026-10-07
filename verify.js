@@ -1,4 +1,3 @@
-
 const log4js = require('log4js')
 const path = require('path')
 const fs = require('fs')
@@ -49,16 +48,14 @@ vcStatusService.setLogger(logger)
 // 設定
 // ============================================================
 
-// Credential 発行データ
 const credentialOfferData =
   require('../input-datas/offer-data.json')
 
-// Wallet 情報
 const walletInfo =
   require('../input-datas/wallet-info.json')
 
 
-// 同一 Credential Offer を複数の Holder で利用可能にするか。
+// 同一 Credential Offer を複数の Holder で利用するか。
 const multipleUseAllowed = true
 
 
@@ -69,10 +66,13 @@ const REDIRECT_URI =
 
 
 /**
- * 発行対象 Credential
+ * 発行対象の Credential を定義します。
  *
- * key   : profileId
- * value : offer-data.json の config key
+ * key:
+ *   Issuer2 の profileId
+ *
+ * value:
+ *   offer-data.json の設定キー
  */
 const credentialMap = [
   [
@@ -116,8 +116,18 @@ const HOLDER_DIDS =
 // 共通処理
 // ============================================================
 
+/**
+ * 出力先ディレクトリを作成します。
+ */
 const createOutputDirectory = () => {
-  if (!fs.existsSync(OUTPUT_PATH)) {
+
+  // 出力先が存在しない場合のみ作成します。
+  if (
+    !fs.existsSync(
+      OUTPUT_PATH
+    )
+  ) {
+
     fs.mkdirSync(
       OUTPUT_PATH,
       {
@@ -128,12 +138,18 @@ const createOutputDirectory = () => {
 }
 
 
+/**
+ * JSON ファイルを出力します。
+ */
 const writeJsonFile = (
   filePath,
   data
 ) => {
+
+  // 出力先ディレクトリを確認します。
   createOutputDirectory()
 
+  // JSON を整形して保存します。
   fs.writeFileSync(
     filePath,
     JSON.stringify(
@@ -151,14 +167,24 @@ const writeJsonFile = (
 }
 
 
+/**
+ * JSON ファイルを読み込みます。
+ */
 const readJsonFile = filePath => {
 
-  if (!fs.existsSync(filePath)) {
+  // ファイルが存在するか確認します。
+  if (
+    !fs.existsSync(
+      filePath
+    )
+  ) {
+
     throw new Error(
       `ファイルが存在しません: ${filePath}`
     )
   }
 
+  // JSON ファイルを読み込みます。
   return JSON.parse(
     fs.readFileSync(
       filePath,
@@ -172,6 +198,9 @@ const readJsonFile = filePath => {
 // Credential Profile
 // ============================================================
 
+/**
+ * Credential Profile を取得します。
+ */
 const checkCredentialProfile =
   async profileId => {
 
@@ -180,12 +209,15 @@ const checkCredentialProfile =
       profileId
     )
 
+    // Issuer2 から Profile を取得します。
     const profile =
       await issuer2Service.getProfile(
         profileId
       )
 
+    // Profile が存在しない場合はエラーにします。
     if (!profile) {
+
       throw new Error(
         `Credential Profile が存在しません: ${profileId}`
       )
@@ -208,6 +240,10 @@ const checkCredentialProfile =
 // Credential Offer
 // ============================================================
 
+/**
+ * Authorization Code Flow 用の
+ * Credential Offer を作成します。
+ */
 const createCredentialOffer =
   async (
     profileId,
@@ -219,6 +255,20 @@ const createCredentialOffer =
       profileId
     )
 
+    /**
+     * 複数 Holder で同一 Offer を利用する場合は
+     * issuer_state を含めないようにします。
+     *
+     * true  : OMIT
+     * false : INCLUDE
+     */
+    const issuerStateMode =
+      multipleUseAllowed
+        ? 'OMIT'
+        : 'INCLUDE'
+
+
+    // Issuer2 で Credential Offer を作成します。
     const offer =
       await issuer2Service.createCredentialOffer({
 
@@ -232,14 +282,7 @@ const createCredentialOffer =
         valueMode:
           'BY_REFERENCE',
 
-        /**
-         * 複数 Holder で利用する場合は、
-         * issuer_state を Credential Offer に含めない。
-         */
-        issuerStateMode:
-          multipleUseAllowed
-            ? 'OMIT'
-            : 'INCLUDE',
+        issuerStateMode,
 
         credentialData:
           config.credentialData
@@ -271,11 +314,13 @@ const createCredentialOffer =
       })
 
 
+    // Offer が取得できない場合はエラーにします。
     if (
       !offer
       ||
       !offer.credentialOffer
     ) {
+
       throw new Error(
         `Credential Offer の作成に失敗しました: ${profileId}`
       )
@@ -299,6 +344,9 @@ const createCredentialOffer =
 // Credential Offer 解析
 // ============================================================
 
+/**
+ * Wallet2 で Credential Offer を解析します。
+ */
 const resolveCredentialOffer =
   async (
     walletId,
@@ -309,6 +357,7 @@ const resolveCredentialOffer =
       'Credential Offer を解析します。'
     )
 
+    // Credential Offer の詳細情報を取得します。
     const offerDetail =
       await wallet2Service
         .resolveCredentialOffer(
@@ -334,6 +383,10 @@ const resolveCredentialOffer =
 // Authorization URL
 // ============================================================
 
+/**
+ * Authorization Code Flow 用の
+ * Authorization URL を生成します。
+ */
 const generateAuthorizationUrl =
   async (
     walletId,
@@ -344,13 +397,19 @@ const generateAuthorizationUrl =
       'Authorization URL を生成します。'
     )
 
-
+    /**
+     * Holder ごとに Authorization URL を生成します。
+     *
+     * PKCE を使用するため、
+     * state / codeVerifier も Holder ごとに異なります。
+     */
     const authorizationResult =
       await wallet2Service
         .generateAuthorizationUrl(
           walletId,
           credentialOffer,
           {
+
             clientId:
               CLIENT_ID,
 
@@ -375,7 +434,6 @@ const generateAuthorizationUrl =
       )
     )
 
-
     return authorizationResult
   }
 
@@ -384,14 +442,23 @@ const generateAuthorizationUrl =
 // Holder DID
 // ============================================================
 
+/**
+ * 発行対象の Holder DID を取得します。
+ */
 const getTargetHolderDids = () => {
 
   /**
-   * 一対一
+   * 一対一の場合は、
+   * defaultDidId のみ使用します。
    */
-  if (!multipleUseAllowed) {
+  if (
+    !multipleUseAllowed
+  ) {
 
-    if (!HOLDER_DID) {
+    if (
+      !HOLDER_DID
+    ) {
+
       throw new Error(
         'defaultDidId が設定されていません。'
       )
@@ -404,26 +471,36 @@ const getTargetHolderDids = () => {
 
 
   /**
-   * 一対多
+   * 一対多の場合は、
+   * walletInfo.dids をすべて使用します。
    */
   const holderDids =
     HOLDER_DIDS
       .map(item => {
 
+        // 配列要素が文字列の場合
         if (
-          typeof item === 'string'
+          typeof item
+          ===
+          'string'
         ) {
+
           return item
         }
 
+        // オブジェクトの場合は did を取得します。
         return item?.did
       })
       .filter(Boolean)
 
 
+  // Holder DID が1件もない場合はエラーにします。
   if (
-    holderDids.length === 0
+    holderDids.length
+    ===
+    0
   ) {
+
     throw new Error(
       'Holder DID が設定されていません。'
     )
@@ -434,9 +511,13 @@ const getTargetHolderDids = () => {
 
 
 // ============================================================
-// Offer + Authorization URL 作成
+// Offer / Authorization URL 作成
 // ============================================================
 
+/**
+ * Credential Offer を作成し、
+ * Holder ごとの Authorization URL を生成します。
+ */
 const getOfferDetail =
   async (
     profileId,
@@ -449,9 +530,9 @@ const getOfferDetail =
 
     try {
 
-      // ------------------------------
-      // Profile
-      // ------------------------------
+      // ------------------------------------------------------
+      // Credential Profile を取得します。
+      // ------------------------------------------------------
 
       const profile =
         await checkCredentialProfile(
@@ -459,11 +540,12 @@ const getOfferDetail =
         )
 
 
-      // ------------------------------
-      // Credential Offer
+      // ------------------------------------------------------
+      // Credential Offer を作成します。
       //
-      // 同一 Offer を1回だけ作成する
-      // ------------------------------
+      // 複数 Holder の場合でも
+      // Offer 自体は1回だけ作成します。
+      // ------------------------------------------------------
 
       const offer =
         await createCredentialOffer(
@@ -472,9 +554,9 @@ const getOfferDetail =
         )
 
 
-      // ------------------------------
-      // BSL
-      // ------------------------------
+      // ------------------------------------------------------
+      // BSL を作成します。
+      // ------------------------------------------------------
 
       await vcStatusService
         .createBSL(
@@ -483,11 +565,12 @@ const getOfferDetail =
         )
 
 
-      // ------------------------------
-      // Offer Detail
+      // ------------------------------------------------------
+      // Credential Offer を解析します。
       //
-      // Offer 自体は同じなので1回だけ解析
-      // ------------------------------
+      // 同じ Offer を使用するため、
+      // 解析は1回だけ行います。
+      // ------------------------------------------------------
 
       const offerDetail =
         await resolveCredentialOffer(
@@ -496,20 +579,24 @@ const getOfferDetail =
         )
 
 
-      // ------------------------------
-      // Holder
-      // ------------------------------
+      // ------------------------------------------------------
+      // 発行対象 Holder を取得します。
+      // ------------------------------------------------------
 
       const holderDids =
         getTargetHolderDids()
 
+
+      /**
+       * Holder ごとの
+       * Authorization Flow 情報を保存します。
+       */
       const holderFlows = []
 
 
-      // ------------------------------
-      // Holder ごとに
-      // Authorization URL を生成
-      // ------------------------------
+      // ------------------------------------------------------
+      // Holder ごとに Authorization URL を生成します。
+      // ------------------------------------------------------
 
       for (
         const holderDid
@@ -530,6 +617,10 @@ const getOfferDetail =
         )
 
 
+        /**
+         * 同一 Credential Offer を使用して
+         * Holder ごとに Authorization URL を生成します。
+         */
         const authorizationResult =
           await generateAuthorizationUrl(
             WALLET_ID,
@@ -537,19 +628,24 @@ const getOfferDetail =
           )
 
 
+        // Authorization URL が取得できたか確認します。
         if (
           !authorizationResult
             .authorizationUrl
         ) {
+
           throw new Error(
             `Authorization URL が取得できません: ${holderDid}`
           )
         }
 
 
+        // state が取得できたか確認します。
         if (
-          !authorizationResult.state
+          !authorizationResult
+            .state
         ) {
+
           throw new Error(
             `state が取得できません: ${holderDid}`
           )
@@ -557,11 +653,11 @@ const getOfferDetail =
 
 
         /**
-         * Authorization URL と
-         * Holder DID を紐づけて保存する。
+         * Holder DID と Authorization 情報を
+         * 同じレコードとして保存します。
          *
-         * redirectUrl は
-         * ブラウザ認証後に手動で設定する。
+         * redirectUrl はブラウザ認証後に
+         * 手動で設定します。
          */
         holderFlows.push({
 
@@ -575,6 +671,10 @@ const getOfferDetail =
       }
 
 
+      /**
+       * Offer と Holder ごとの Authorization 情報を
+       * まとめて返します。
+       */
       const result = {
 
         profileId,
@@ -625,9 +725,14 @@ const getOfferDetail =
 
 
 // ============================================================
-// Offer 情報をファイルに保存
+// Offer 情報保存
 // ============================================================
 
+/**
+ * Credential Offer と
+ * Holder ごとの Authorization URL を生成し、
+ * JSON ファイルに保存します。
+ */
 const getOfferDetails =
   async () => {
 
@@ -639,6 +744,10 @@ const getOfferDetails =
 
       const results = []
 
+
+      // ------------------------------------------------------
+      // 発行対象 Credential を順番に処理します。
+      // ------------------------------------------------------
 
       for (
         const [
@@ -662,12 +771,16 @@ const getOfferDetails =
         )
 
 
+        // offer-data.json から設定を取得します。
         const config =
           credentialOfferData
             ?.[configId]
 
 
-        if (!config) {
+        // 設定が存在しない場合はスキップします。
+        if (
+          !config
+        ) {
 
           logger.debug(
             `Credential 設定が存在しないためスキップします: ${configId}`
@@ -677,6 +790,7 @@ const getOfferDetails =
         }
 
 
+        // Offer と Authorization URL を生成します。
         const result =
           await getOfferDetail(
             profileId,
@@ -690,9 +804,9 @@ const getOfferDetails =
       }
 
 
-      // ------------------------------
-      // JSON 保存
-      // ------------------------------
+      // ------------------------------------------------------
+      // 生成結果を JSON に保存します。
+      // ------------------------------------------------------
 
       writeJsonFile(
         OFFER_DETAILS_FILE,
@@ -700,9 +814,9 @@ const getOfferDetails =
       )
 
 
-      // ------------------------------
-      // Authorization URL 表示
-      // ------------------------------
+      // ------------------------------------------------------
+      // Authorization URL をログにも表示します。
+      // ------------------------------------------------------
 
       logger.debug('')
       logger.debug(
@@ -749,6 +863,10 @@ const getOfferDetails =
       }
 
 
+      // ------------------------------------------------------
+      // 次の操作を案内します。
+      // ------------------------------------------------------
+
       logger.debug('')
       logger.debug(
         '各 Authorization URL をブラウザで開いて認証してください。'
@@ -786,13 +904,21 @@ const getOfferDetails =
 
 
 // ============================================================
-// Redirect URL 解析
+// Redirect URL
 // ============================================================
 
+/**
+ * ブラウザ認証後の Redirect URL から
+ * Authorization Code と state を取得します。
+ */
 const parseAuthorizationResult =
   redirectUrl => {
 
-    if (!redirectUrl) {
+    // Redirect URL が設定されているか確認します。
+    if (
+      !redirectUrl
+    ) {
+
       throw new Error(
         'Redirect URL が設定されていません。'
       )
@@ -802,6 +928,7 @@ const parseAuthorizationResult =
     let url
 
 
+    // Redirect URL を URL オブジェクトに変換します。
     try {
 
       url =
@@ -817,26 +944,36 @@ const parseAuthorizationResult =
     }
 
 
+    // Authorization Code を取得します。
     const code =
       url
         .searchParams
         .get('code')
 
 
+    // state を取得します。
     const state =
       url
         .searchParams
         .get('state')
 
 
-    if (!code) {
+    // Authorization Code が存在するか確認します。
+    if (
+      !code
+    ) {
+
       throw new Error(
         'Redirect URL に Authorization Code が含まれていません。'
       )
     }
 
 
-    if (!state) {
+    // state が存在するか確認します。
+    if (
+      !state
+    ) {
+
       throw new Error(
         'Redirect URL に state が含まれていません。'
       )
@@ -851,16 +988,23 @@ const parseAuthorizationResult =
 
 
 // ============================================================
-// state 確認
+// state
 // ============================================================
 
+/**
+ * Authorization Request 時の state と
+ * Redirect URL の state が一致するか確認します。
+ */
 const validateState =
   (
     expectedState,
     actualState
   ) => {
 
-    if (!actualState) {
+    // Redirect URL 側の state を確認します。
+    if (
+      !actualState
+    ) {
 
       throw new Error(
         'Redirect URL から state を取得できません。'
@@ -868,6 +1012,7 @@ const validateState =
     }
 
 
+    // state が一致するか確認します。
     if (
       expectedState
       !==
@@ -885,6 +1030,10 @@ const validateState =
 // Credential 取得
 // ============================================================
 
+/**
+ * Authorization Code を使用して
+ * Credential を取得します。
+ */
 const receiveCredential =
   async (
     offerDetailResult,
@@ -910,43 +1059,53 @@ const receiveCredential =
       holderFlow
 
 
+    /**
+     * Wallet2 の
+     * Authorized Credential 取得 API に渡す
+     * パラメータを作成します。
+     */
     const params = {
 
+      // ブラウザ認証後に取得した Authorization Code
       code:
         authorizationCode,
 
+      // Credential Issuer
       credentialIssuer:
         authorizationResult
           .credentialIssuerBaseUrl,
 
+      // Credential Endpoint
       credentialEndpoint:
         offerDetail
           .credentialEndpoint,
 
+      // Credential Configuration
       credentialConfigurationId:
         authorizationResult
           .credentialConfigurationId,
 
+      // OAuth Client
       clientId:
         CLIENT_ID,
 
+      // Authorization Request と同じ Redirect URI
       redirectUri:
         REDIRECT_URI,
 
+      // 今回は DPoP を使用しない
       useDPoP:
         false,
 
-      /**
-       * Holder ごとに
-       * DID を指定する。
-       */
+      // Credential の Subject として使用する Holder DID
       did:
         holderDid,
     }
 
 
     /**
-     * PKCE
+     * PKCE を使用している場合は
+     * Holder ごとの codeVerifier を設定します。
      */
     if (
       authorizationResult
@@ -960,7 +1119,8 @@ const receiveCredential =
 
 
     /**
-     * Nonce Endpoint
+     * nonceEndpoint が返されている場合のみ
+     * パラメータに追加します。
      */
     if (
       authorizationResult
@@ -973,6 +1133,7 @@ const receiveCredential =
     }
 
 
+    // Authorization Code を使用して Credential を取得します。
     const receiveResult =
       await wallet2Service
         .receiveAuthorizedCredential(
@@ -999,6 +1160,10 @@ const receiveCredential =
 // Credential 詳細
 // ============================================================
 
+/**
+ * Wallet2 に保存された Credential の
+ * 詳細情報を取得します。
+ */
 const getCredentialDetails =
   async (
     walletId,
@@ -1008,6 +1173,7 @@ const getCredentialDetails =
     const credentials = []
 
 
+    // Credential ID ごとに詳細を取得します。
     for (
       const credentialId
       of credentialIds
@@ -1041,6 +1207,10 @@ const getCredentialDetails =
 // Credential 発行
 // ============================================================
 
+/**
+ * 1つの Credential Offer に対して、
+ * Holder ごとに Credential を取得します。
+ */
 const requestCredential =
   async (
     offerDetailResult
@@ -1061,12 +1231,15 @@ const requestCredential =
         offerDetailResult
 
 
+      // Holder 情報が存在するか確認します。
       if (
         !Array.isArray(
           holderFlows
         )
         ||
-        holderFlows.length === 0
+        holderFlows.length
+        ===
+        0
       ) {
 
         throw new Error(
@@ -1078,9 +1251,9 @@ const requestCredential =
       const holderResults = []
 
 
-      // ------------------------------
-      // Holder ごとに Credential 発行
-      // ------------------------------
+      // ------------------------------------------------------
+      // Holder ごとに Credential を取得します。
+      // ------------------------------------------------------
 
       for (
         const holderFlow
@@ -1113,11 +1286,13 @@ const requestCredential =
         )
 
 
-        // ------------------------------
-        // Redirect URL
-        // ------------------------------
+        // ----------------------------------------------------
+        // Redirect URL が設定されているか確認します。
+        // ----------------------------------------------------
 
-        if (!redirectUrl) {
+        if (
+          !redirectUrl
+        ) {
 
           throw new Error(
             `Redirect URL が設定されていません: ${holderDid}`
@@ -1125,9 +1300,9 @@ const requestCredential =
         }
 
 
-        // ------------------------------
-        // code / state 取得
-        // ------------------------------
+        // ----------------------------------------------------
+        // Redirect URL から code / state を取得します。
+        // ----------------------------------------------------
 
         const authorization =
           parseAuthorizationResult(
@@ -1135,9 +1310,10 @@ const requestCredential =
           )
 
 
-        // ------------------------------
-        // state 検証
-        // ------------------------------
+        // ----------------------------------------------------
+        // Authorization Request 時の state と
+        // Redirect URL の state を比較します。
+        // ----------------------------------------------------
 
         validateState(
           authorizationResult
@@ -1148,9 +1324,10 @@ const requestCredential =
         )
 
 
-        // ------------------------------
-        // Credential 取得
-        // ------------------------------
+        // ----------------------------------------------------
+        // Authorization Code を使用して
+        // Credential を取得します。
+        // ----------------------------------------------------
 
         const receiveResult =
           await receiveCredential(
@@ -1160,6 +1337,10 @@ const requestCredential =
           )
 
 
+        // ----------------------------------------------------
+        // 保存された Credential ID を取得します。
+        // ----------------------------------------------------
+
         const credentialIds =
           receiveResult
             .credentialIds
@@ -1167,7 +1348,9 @@ const requestCredential =
 
 
         if (
-          credentialIds.length === 0
+          credentialIds.length
+          ===
+          0
         ) {
 
           throw new Error(
@@ -1176,9 +1359,9 @@ const requestCredential =
         }
 
 
-        // ------------------------------
-        // Credential 詳細
-        // ------------------------------
+        // ----------------------------------------------------
+        // Credential 詳細を取得します。
+        // ----------------------------------------------------
 
         const credentials =
           await getCredentialDetails(
@@ -1186,6 +1369,10 @@ const requestCredential =
             credentialIds
           )
 
+
+        // ----------------------------------------------------
+        // Holder ごとの発行結果を保存します。
+        // ----------------------------------------------------
 
         holderResults.push({
 
@@ -1200,6 +1387,10 @@ const requestCredential =
       }
 
 
+      /**
+       * 1つの Profile に対する
+       * 全 Holder の発行結果を返します。
+       */
       return {
 
         profileId,
@@ -1238,6 +1429,11 @@ const requestCredential =
 // Credential 発行開始
 // ============================================================
 
+/**
+ * JSON に保存した Offer 情報を読み込み、
+ * 設定済みの redirectUrl を使用して
+ * Credential を発行します。
+ */
 const requestVC =
   async () => {
 
@@ -1247,9 +1443,9 @@ const requestVC =
 
     try {
 
-      // ------------------------------
-      // Offer 情報読み込み
-      // ------------------------------
+      // ------------------------------------------------------
+      // getOfferDetails で保存した JSON を読み込みます。
+      // ------------------------------------------------------
 
       const offerDetails =
         readJsonFile(
@@ -1262,7 +1458,9 @@ const requestVC =
           offerDetails
         )
         ||
-        offerDetails.length === 0
+        offerDetails.length
+        ===
+        0
       ) {
 
         throw new Error(
@@ -1274,9 +1472,9 @@ const requestVC =
       const results = []
 
 
-      // ------------------------------
-      // Profile ごとに処理
-      // ------------------------------
+      // ------------------------------------------------------
+      // Profile ごとに Credential 発行を実行します。
+      // ------------------------------------------------------
 
       for (
         const offerDetailResult
@@ -1295,9 +1493,9 @@ const requestVC =
       }
 
 
-      // ------------------------------
-      // 結果保存
-      // ------------------------------
+      // ------------------------------------------------------
+      // 発行結果を JSON に保存します。
+      // ------------------------------------------------------
 
       writeJsonFile(
         CREDENTIAL_RESULT_FILE,
@@ -1349,6 +1547,16 @@ const requestVC =
 // Main
 // ============================================================
 
+/**
+ * 実行コマンドに応じて処理を切り替えます。
+ *
+ * getOfferDetails:
+ *   Offer と Authorization URL を生成します。
+ *
+ * requestVC:
+ *   JSON に設定した redirectUrl を使用して
+ *   Credential を取得します。
+ */
 const main =
   async () => {
 
@@ -1358,11 +1566,15 @@ const main =
 
     try {
 
-      switch (command) {
+      switch (
+        command
+      ) {
 
         /**
-         * 1.
-         * Offer / Authorization URL を生成
+         * Step 1
+         *
+         * Credential Offer と
+         * Authorization URL を生成します。
          */
         case 'getOfferDetails':
 
@@ -1372,9 +1584,10 @@ const main =
 
 
         /**
-         * 2.
-         * JSON の redirectUrl を使って
-         * Credential を発行
+         * Step 2
+         *
+         * JSON の redirectUrl を使用して
+         * Credential を発行します。
          */
         case 'requestVC':
 
@@ -1416,7 +1629,8 @@ const main =
         error.stack
       )
 
-      process.exitCode = 1
+      process.exitCode =
+        1
     }
   }
 
