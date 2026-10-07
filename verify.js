@@ -1,4 +1,4 @@
-# v1.0.0 における Offer / Presentation Request の複数 Holder 利用について
+# v1.0.0 における Credential Offer の複数 Holder 利用について
 
 ## 概要
 
@@ -7,27 +7,18 @@ Session の生成方法と複数 Holder 利用時の動作が異なります。
 
 対象：
 
-- Credential Offer URL
-- Presentation Request URL
+- Pre-Authorized Code Flow
+- Authorization Code Flow
 
-本資料では、v1.0.0 の実装内容と確認結果を整理します。
+本資料では、Issuer API2 における v1.0.0 の実装内容と確認結果を整理します。
 
 > ※ 複数 Holder 対応の具体的な修正方法については、別途検討します。
 
 ---
 
-## 1. Credential Offer URL
+## 1. Pre-Authorized Code Flow
 
-Credential Offer には、主に以下の2つの認可方式があります。
-
-- Pre-Authorized Code Flow
-- Authorization Code Flow
-
----
-
-### 1.1 Pre-Authorized Code Flow
-
-#### 現状
+### 現状
 
 Pre-Authorized Code Flow では、
 Credential Offer 作成時に Issuance Session と Pre-Authorized Code が生成されます。
@@ -78,7 +69,7 @@ override suspend fun take(sessionId: String): IssuanceSession? =
     }
 ```
 
-#### 結論
+### 結論
 
 Pre-Authorized Code Flow では、
 同一 Credential Offer URL を複数 Holder で利用することはできません。
@@ -87,7 +78,7 @@ Pre-Authorized Code Flow では、
 
 ---
 
-### 1.2 Authorization Code Flow
+## 2. Authorization Code Flow
 
 Authorization Code Flow では、
 `issuerStateMode` により Session の生成方法が異なります。
@@ -106,7 +97,7 @@ val issuerStateMode = when (request.authMethod) {
 
 ---
 
-#### issuerStateMode = INCLUDE
+### 2.1 issuerStateMode = INCLUDE
 
 Credential Offer 作成時の `sessionId` が
 `issuer_state` として Offer に設定されます。
@@ -160,7 +151,7 @@ Credential Issuance
 
 ---
 
-#### issuerStateMode = OMIT
+### 2.2 issuerStateMode = OMIT
 
 `OMIT` の場合、Credential Offer には `issuer_state` が含まれません。
 
@@ -228,7 +219,7 @@ override suspend fun consume(code: String): AuthorizationCodeRecord? {
 }
 ```
 
-#### 確認結果
+### 確認結果
 
 `issuerStateMode = OMIT` で同一 Offer を複数 Holder に利用したところ、
 
@@ -250,22 +241,45 @@ Authorization Request ごとに新しい Session を生成する実装になっ�
 複数 Holder での一連の発行処理については、
 引き続き確認が必要です。
 
-#### 結論
+### 結論
 
 ```text
-INCLUDE
+Pre-Authorized Code Flow
+→ 複数 Holder 利用不可
+→ コード修正が必要
+
+Authorization Code Flow / INCLUDE
 → 同じ Issuance Session を利用
 → 複数 Holder 利用には適さない
 
-OMIT
+Authorization Code Flow / OMIT
 → Authorization Request ごとに新しい Session を生成
-→ 複数 Holder 向けの構成は可能
-→ ただし、現時点では2人目の Credential Request が失敗
+→ 複数 Holder 利用について引き続き確認が必要
 ```
+
+具体的な修正方法については、別途検討します。
+
+
+
+
+# v1.0.0 における Presentation Request の複数 Holder 利用について
+
+## 概要
+
+walt.id v1.0.0 の Verifier API2 では、
+Presentation Request は 1つの Verification Session に紐づいています。
+
+Presentation Request 自体は複数回取得できますが、
+同じ Verification Session に対する Presentation Response の処理は
+1回を前提としています。
+
+本資料では、Verifier API2 における v1.0.0 の実装内容と確認結果を整理します。
+
+> ※ 複数 Holder 対応の具体的な修正方法については、別途検討します。
 
 ---
 
-## 2. Presentation Request URL
+## 1. Presentation Request URL
 
 ### 現状
 
@@ -298,11 +312,15 @@ class VerificationSessionAlreadyUsedException(sessionId: String) :
     )
 ```
 
-Presentation Request 自体は複数回取得できますが、
-同じ Verification Session に対する Presentation Response の処理は
-1回を前提としています。
+Presentation Request の取得自体は複数回可能ですが、
+Presentation Response の処理は同一 Verification Session に対して
+1回のみ実行する前提です。
 
-### 結論
+---
+
+## 2. Session 構成
+
+現在の構成は以下のとおりです。
 
 ```text
 1 Presentation Request URL
@@ -312,8 +330,12 @@ Presentation Request 自体は複数回取得できますが、
 1 Verification Flow
 ```
 
-同一 Presentation Request URL を複数 Holder で利用する場合は、
-コード修正が必要です。
+そのため、同じ Presentation Request URL を複数 Holder が利用した場合も、
+同じ Verification Session に対して Presentation Response を送信することになります。
+
+1人目の Holder の処理開始後は、
+同じ Verification Session は処理中または処理済みとなるため、
+2人目以降の Presentation Response は受け付けられません。
 
 ---
 
@@ -322,39 +344,52 @@ Presentation Request 自体は複数回取得できますが、
 想定要件：
 
 ```text
-Credential Offer URL
+1 Presentation Request URL
         ↓
 Holder A
 Holder B
 Holder C
 ```
 
+各 Holder がそれぞれ独立して Verification Flow を完了するためには、
+Holder ごとに独立した Verification Session を生成する必要があります。
+
+想定構成：
+
 ```text
-Presentation Request URL
+1 Presentation Request URL
         ↓
-Holder A
-Holder B
-Holder C
+Holder A → Verification Session A
+Holder B → Verification Session B
+Holder C → Verification Session C
 ```
 
-現時点の整理：
+### 結論
+
+v1.0.0 の標準実装では、
 
 ```text
-Pre-Authorized Code Flow
-→ 複数 Holder 利用不可
-→ コード修正が必要
+1 Presentation Request URL
+        ↓
+1 Verification Session
+        ↓
+1 Verification Flow
+```
 
-Authorization Code Flow / INCLUDE
-→ 同じ Issuance Session を利用
-→ 複数 Holder 利用には適さない
+となっているため、
+同一 Presentation Request URL を複数 Holder で利用して
+それぞれ Verification Flow を完了することはできません。
 
-Authorization Code Flow / OMIT
-→ Authorization Request ごとに新しい Session を生成
-→ 複数 Holder 利用について引き続き確認が必要
+複数 Holder に対応する場合は、
+Verifier API2 のコード修正が必要です。
 
-Presentation Request
-→ 1 Verification Session / 1 Verification Flow
-→ 複数 Holder 利用にはコード修正が必要
+主な確認・修正対象：
+
+```text
+Verifier API2
+├─ Verification Session の管理
+├─ Presentation Response の処理
+└─ 複数 Holder 向けの Session 生成
 ```
 
 具体的な修正方法については、別途検討します。
