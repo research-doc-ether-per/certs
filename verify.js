@@ -1,254 +1,353 @@
-// waltid-applications/waltid-cli/src/commonMain/kotlin/id/walt/cli/commands/DidCreateCmd.kt
+// waltid-applications/waltid-cli/src/jvmTest/kotlin/id/walt/cli/commands/LauncherAndHelpTest.kt
 
 package id.walt.cli.commands
 
-import com.github.ajalt.clikt.core.CliktCommand
-import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.core.context
-import com.github.ajalt.clikt.core.installMordantMarkdown
-import com.github.ajalt.clikt.core.terminal
-import com.github.ajalt.clikt.parameters.options.default
-import com.github.ajalt.clikt.parameters.options.flag
-import com.github.ajalt.clikt.parameters.options.help
-import com.github.ajalt.clikt.parameters.options.option
-import com.github.ajalt.clikt.parameters.types.enum
-import com.github.ajalt.clikt.parameters.types.file
-import com.github.ajalt.clikt.parameters.types.path
-import com.github.ajalt.mordant.terminal.YesNoPrompt
-import id.walt.cli.util.DidMethod
-import id.walt.cli.util.DidUtil
-import id.walt.cli.util.KeyUtil
-import id.walt.cli.util.PrettyPrinter
-import id.walt.cli.util.WaltIdCmdHelpOptionMessage
-import id.walt.did.dids.registrar.dids.DidCreateOptions
-import id.walt.did.dids.registrar.dids.DidWebCreateOptions
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import java.net.URLEncoder
-import kotlin.io.path.Path
-import kotlin.io.path.absolutePathString
-import kotlin.io.path.exists
-import kotlin.io.path.writeText
+import com.github.ajalt.clikt.testing.test
+import id.walt.cli.WaltIdCmd
+import java.io.File
+import java.nio.file.Files
+import java.util.concurrent.TimeUnit
+import kotlin.test.Test
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-class DidCreateCmd : CliktCommand(
-    name = "create"
-) {
-    override fun help(context: Context) = """Create a Decentralized Identifier (DID).
-        
-        Example usage:
-        --------------
-        waltid did create
-        waltid did create -k myKey.json
-        waltid did create -m jwk
-        waltid did create -m web --domain example.com
-        waltid did create -m web --domain example.com --path issuer
-    """.replace("\n", "  \n")
+class LauncherAndHelpTest {
 
-    init {
-        installMordantMarkdown()
-    }
+    @Test
+    fun `root and command help expose retained command families`() {
+        val root =
+            WaltIdCmd().test("--help")
 
-    init {
-        context {
-            localization = WaltIdCmdHelpOptionMessage
+        assertEquals(
+            0,
+            root.statusCode
+        )
+
+        listOf(
+            "key",
+            "did",
+            "vc",
+            "vp"
+        ).forEach {
+            assertContains(
+                root.stdout,
+                it
+            )
         }
+
+        assertContains(
+            KeyGenerateCmd()
+                .test("--help")
+                .stdout,
+            "--show-private"
+        )
+
+        assertContains(
+            KeyConvertCmd()
+                .test("--help")
+                .stdout,
+            "--output-format"
+        )
+
+        val didHelp =
+            DidCreateCmd().test("--help")
+
+        assertContains(
+            didHelp.stdout,
+            "--method"
+        )
+
+        assertContains(
+            didHelp.stdout,
+            "KEY"
+        )
+
+        assertContains(
+            didHelp.stdout,
+            "JWK"
+        )
+
+        assertContains(
+            didHelp.stdout,
+            "WEB"
+        )
+
+        assertContains(
+            didHelp.stdout,
+            "--domain"
+        )
+
+        assertContains(
+            didHelp.stdout,
+            "--path"
+        )
+
+        assertContains(
+            VCVerifyCmd()
+                .test("--help")
+                .stdout,
+            "Signature is mandatory"
+        )
+
+        assertContains(
+            VPCreateCmd()
+                .test("--help")
+                .stdout,
+            "--dcql-query"
+        )
+
+        assertContains(
+            VPVerifyCmd()
+                .test("--help")
+                .stdout,
+            "--verifiable-presentation"
+        )
     }
 
-    val print: PrettyPrinter = PrettyPrinter(this)
-
-    private val method by option("-m", "--method")
-        .help("The DID method to use: key, jwk or web.")
-        .enum<DidMethod>(ignoreCase = true)
-        .default(DidMethod.KEY)
-
-    private val keyFile by option("-k", "--key")
-        .help("The subject's key to be used. If none is provided, a new one will be generated.")
-        .file(canBeDir = false)
-
-    private val useJwkJcsPub by option("-j", "--useJwkJcsPub")
-        .help(
-            "Flag to enable JWK_JCS-Pub encoding (default=off). " +
-                "Applies only to the did:key method and is relevant in the context of EBSI."
-        )
-        .flag(default = false)
-
-    private val domain by option("--domain")
-        .help("Domain for did:web, e.g. example.com")
-
-    private val webPath by option("--path")
-        .help("Optional path for did:web, e.g. issuer")
-
-    private val output by option("-o", "--did-doc-output")
-        .path()
-        .help(
-            "File path to save the created DID Document (optional). " +
-                "If not specified, the did document will be saved at the <did>.json file."
+    @Test
+    fun `missing required options and malformed values fail parsing`() {
+        assertEquals(
+            0,
+            KeyConvertCmd()
+                .test(emptyList())
+                .statusCode
         )
 
-    override fun run() {
-        runBlocking {
-            val key = KeyUtil(this@DidCreateCmd).getKey(keyFile)
+        assertEquals(
+            0,
+            VCSignCmd()
+                .test(emptyList())
+                .statusCode
+        )
 
-            val jwk = KeyUtil.exportJwk(key, private = false)
+        assertEquals(
+            0,
+            VPCreateCmd()
+                .test(emptyList())
+                .statusCode
+        )
 
-            print.green("DID subject public key (JWK):")
-            print.box(jwk)
+        assertEquals(
+            0,
+            VPVerifyCmd()
+                .test(emptyList())
+                .statusCode
+        )
 
-            val options = when (method) {
-                DidMethod.KEY -> DidCreateOptions(
-                    method = "key",
-                    config = mapOf(
-                        "useJwkJcsPub" to JsonPrimitive(useJwkJcsPub)
-                    ),
+        assertTrue(
+            KeyConvertCmd()
+                .test(
+                    listOf("-i")
                 )
+                .statusCode != 0
+        )
 
-                DidMethod.JWK -> DidCreateOptions(
-                    method = "jwk",
-                    config = emptyMap(),
+        assertTrue(
+            VCSignCmd()
+                .test(
+                    listOf("-k")
                 )
+                .statusCode != 0
+        )
 
-                DidMethod.WEB -> DidWebCreateOptions(
-                    domain = requireNotNull(domain) {
-                        "--domain is required for did:web"
-                    },
-                    path = webPath ?: "",
+        assertTrue(
+            VPCreateCmd()
+                .test(
+                    listOf(
+                        "-hd",
+                        "did:example:holder"
+                    )
                 )
-            }
+                .statusCode != 0
+        )
 
-            val result = DidUtil.createDid(
-                method,
-                key,
-                options,
+        assertTrue(
+            VPVerifyCmd()
+                .test(
+                    listOf(
+                        "-n",
+                        "nonce"
+                    )
+                )
+                .statusCode != 0
+        )
+
+        assertTrue(
+            KeyGenerateCmd()
+                .test(
+                    listOf(
+                        "-t",
+                        "unknown"
+                    )
+                )
+                .statusCode != 0
+        )
+    }
+
+    @Test
+    fun `installed Linux and tracked launchers work from unrelated directories`() {
+        val module =
+            File(".").canonicalFile
+
+        val installed =
+            File(
+                module,
+                "build/install/waltid-jvm/bin/waltid"
             )
 
-            val outputFile =
-                output ?: Path("${URLEncoder.encode(result.did, "UTF-8")}.json")
+        val temporary =
+            Files
+                .createTempDirectory(
+                    "cli-launcher-cwd"
+                )
+                .toFile()
 
-            if (
-                outputFile.exists() &&
-                YesNoPrompt(
-                    "The file \"${outputFile.absolutePathString()}\" already exists, do you want to overwrite it?",
-                    terminal
-                ).ask() == false
-            ) {
-                print.plain("Will not overwrite output file.")
-                return@runBlocking
-            }
+        listOf(
+            module,
+            temporary
+        ).forEach { workingDirectory ->
 
-            val prettyJson = Json {
-                prettyPrint = true
-            }
+            val result =
+                run(
+                    listOf(
+                        installed.absolutePath,
+                        "--help"
+                    ),
+                    workingDirectory
+                )
 
-            val prettyJsonString =
-                prettyJson.encodeToString(result.didDocument)
+            assertEquals(
+                0,
+                result.exitCode,
+                result.output
+            )
 
-            print.green("DID Document:")
-            print.box(prettyJsonString)
-
-            outputFile.writeText(prettyJsonString)
-
-            print.green("DID created:")
-            print.plain(result.did)
+            assertContains(
+                result.output,
+                "Commands:"
+            )
         }
+
+        val tracked =
+            run(
+                listOf(
+                    "sh",
+                    File(
+                        module,
+                        "waltid-cli.sh"
+                    ).absolutePath,
+                    "--help"
+                ),
+                temporary
+            )
+
+        assertEquals(
+            0,
+            tracked.exitCode,
+            tracked.output
+        )
+
+        assertContains(
+            tracked.output,
+            "Commands:"
+        )
     }
-}
 
-// waltid-applications/waltid-cli/src/jvmTest/kotlin/id/walt/cli/commands/DidAndCredentialCommandTest.kt
+    @Test
+    fun `Windows installed launcher uses bounded wildcard classpath`() {
+        val script =
+            File(
+                "build/install/waltid-jvm/bin/waltid.bat"
+            )
 
-// @Test
-// fun `DID help and parser expose only native key and jwk methods`() {
-//     val help = DidCreateCmd().test("--help")
-//     assertContains(help.stdout, "KEY")
-//     assertContains(help.stdout, "JWK")
-//     assertTrue(!help.stdout.contains("WEB"))
-//     assertTrue(!help.stdout.contains("web-domain"))
-
-//     val result = DidCreateCmd().test(
-//         listOf("-m", "web", "-k", fixtureKey.path)
-//     )
-//     assertTrue(result.statusCode != 0)
-//     assertContains(result.stderr.lowercase(), "invalid choice")
-// }
-
-@Test
-fun `DID help exposes key jwk and web methods`() {
-    val help = DidCreateCmd().test("--help")
-
-    assertEquals(0, help.statusCode)
-
-    assertContains(help.stdout, "KEY")
-    assertContains(help.stdout, "JWK")
-    assertContains(help.stdout, "WEB")
-
-    assertContains(help.stdout, "--domain")
-    assertContains(help.stdout, "--path")
-}
-
-@Test
-fun `did web can be created with domain`() {
-    val directory =
-        Files.createTempDirectory("cli-did-web")
-
-    val document =
-        directory.resolve("did-web.json")
-
-    val result = DidCreateCmd().test(
-        listOf(
-            "-m", "web",
-            "-k", fixtureKey.path,
-            "--domain", "example.com",
-            "-o", document.toString(),
+        assertTrue(
+            script.isFile
         )
-    )
 
-    assertEquals(
-        0,
-        result.statusCode,
-        result.stdout + result.stderr
-    )
+        val content =
+            script.readText()
 
-    assertContains(
-        result.stdout,
-        "did:web:example.com"
-    )
-
-    assertTrue(document.toFile().exists())
-}
-
-@Test
-fun `did web can be created with path`() {
-    val directory =
-        Files.createTempDirectory("cli-did-web-path")
-
-    val document =
-        directory.resolve("did-web.json")
-
-    val result = DidCreateCmd().test(
-        listOf(
-            "-m", "web",
-            "-k", fixtureKey.path,
-            "--domain", "example.com",
-            "--path", "issuer",
-            "-o", document.toString(),
+        assertContains(
+            content,
+            "%APP_HOME%\\lib\\*"
         )
-    )
 
-    assertEquals(
-        0,
-        result.statusCode,
-        result.stdout + result.stderr
-    )
+        assertContains(
+            content,
+            "id.walt.cli.MainKt"
+        )
 
-    assertContains(
-        result.stdout,
-        "did:web:example.com:issuer"
-    )
+        assertFalse(
+            content.contains(
+                ".jar;"
+            )
+        )
 
-    assertTrue(document.toFile().exists())
+        assertTrue(
+            content
+                .lineSequence()
+                .maxOf(String::length) < 8191
+        )
+
+        val tracked =
+            File(
+                "waltid-cli.bat"
+            ).readText()
+
+        assertContains(
+            tracked,
+            "%~dp0"
+        )
+
+        assertContains(
+            File(
+                "waltid-cli.sh"
+            ).readText(),
+            "SCRIPT_DIR"
+        )
+
+        assertContains(
+            File(
+                "waltid-cli-development.sh"
+            ).readText(),
+            "SCRIPT_DIR"
+        )
+    }
+
+    private fun run(
+        command: List<String>,
+        workingDirectory: File
+    ): ProcessResult {
+
+        val process =
+            ProcessBuilder(command)
+                .directory(
+                    workingDirectory
+                )
+                .redirectErrorStream(true)
+                .start()
+
+        assertTrue(
+            process.waitFor(
+                30,
+                TimeUnit.SECONDS
+            ),
+            "Launcher timed out"
+        )
+
+        return ProcessResult(
+            process.exitValue(),
+            process
+                .inputStream
+                .bufferedReader()
+                .readText()
+        )
+    }
+
+    private data class ProcessResult(
+        val exitCode: Int,
+        val output: String
+    )
 }
-
-
-
-
-
