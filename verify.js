@@ -17,337 +17,79 @@ class LauncherAndHelpTest {
 
     @Test
     fun `root and command help expose retained command families`() {
-        val root =
-            WaltIdCmd().test("--help")
+        val root = WaltIdCmd().test("--help")
+        assertEquals(0, root.statusCode)
+        listOf("key", "did", "vc", "vp").forEach { assertContains(root.stdout, it) }
 
-        assertEquals(
-            0,
-            root.statusCode
-        )
+        assertContains(KeyGenerateCmd().test("--help").stdout, "--show-private")
+        assertContains(KeyConvertCmd().test("--help").stdout, "--output-format")
 
-        listOf(
-            "key",
-            "did",
-            "vc",
-            "vp"
-        ).forEach {
-            assertContains(
-                root.stdout,
-                it
-            )
-        }
+        val didHelp = DidCreateCmd().test("--help")
+        assertContains(didHelp.stdout, "--method")
+        assertContains(didHelp.stdout, "KEY")
+        assertContains(didHelp.stdout, "JWK")
+        assertContains(didHelp.stdout, "WEB")
+        assertContains(didHelp.stdout, "--domain")
+        assertContains(didHelp.stdout, "--path")
 
-        assertContains(
-            KeyGenerateCmd()
-                .test("--help")
-                .stdout,
-            "--show-private"
-        )
-
-        assertContains(
-            KeyConvertCmd()
-                .test("--help")
-                .stdout,
-            "--output-format"
-        )
-
-        val didHelp =
-            DidCreateCmd().test("--help")
-
-        assertContains(
-            didHelp.stdout,
-            "--method"
-        )
-
-        assertContains(
-            didHelp.stdout,
-            "KEY"
-        )
-
-        assertContains(
-            didHelp.stdout,
-            "JWK"
-        )
-
-        assertContains(
-            didHelp.stdout,
-            "WEB"
-        )
-
-        assertContains(
-            didHelp.stdout,
-            "--domain"
-        )
-
-        assertContains(
-            didHelp.stdout,
-            "--path"
-        )
-
-        assertContains(
-            VCVerifyCmd()
-                .test("--help")
-                .stdout,
-            "Signature is mandatory"
-        )
-
-        assertContains(
-            VPCreateCmd()
-                .test("--help")
-                .stdout,
-            "--dcql-query"
-        )
-
-        assertContains(
-            VPVerifyCmd()
-                .test("--help")
-                .stdout,
-            "--verifiable-presentation"
-        )
+        assertContains(VCVerifyCmd().test("--help").stdout, "Signature is mandatory")
+        assertContains(VPCreateCmd().test("--help").stdout, "--dcql-query")
+        assertContains(VPVerifyCmd().test("--help").stdout, "--verifiable-presentation")
     }
 
     @Test
     fun `missing required options and malformed values fail parsing`() {
-        assertEquals(
-            0,
-            KeyConvertCmd()
-                .test(emptyList())
-                .statusCode
-        )
+        assertEquals(0, KeyConvertCmd().test(emptyList()).statusCode)
+        assertEquals(0, VCSignCmd().test(emptyList()).statusCode)
+        assertEquals(0, VPCreateCmd().test(emptyList()).statusCode)
+        assertEquals(0, VPVerifyCmd().test(emptyList()).statusCode)
 
-        assertEquals(
-            0,
-            VCSignCmd()
-                .test(emptyList())
-                .statusCode
-        )
-
-        assertEquals(
-            0,
-            VPCreateCmd()
-                .test(emptyList())
-                .statusCode
-        )
-
-        assertEquals(
-            0,
-            VPVerifyCmd()
-                .test(emptyList())
-                .statusCode
-        )
-
-        assertTrue(
-            KeyConvertCmd()
-                .test(
-                    listOf("-i")
-                )
-                .statusCode != 0
-        )
-
-        assertTrue(
-            VCSignCmd()
-                .test(
-                    listOf("-k")
-                )
-                .statusCode != 0
-        )
-
-        assertTrue(
-            VPCreateCmd()
-                .test(
-                    listOf(
-                        "-hd",
-                        "did:example:holder"
-                    )
-                )
-                .statusCode != 0
-        )
-
-        assertTrue(
-            VPVerifyCmd()
-                .test(
-                    listOf(
-                        "-n",
-                        "nonce"
-                    )
-                )
-                .statusCode != 0
-        )
-
-        assertTrue(
-            KeyGenerateCmd()
-                .test(
-                    listOf(
-                        "-t",
-                        "unknown"
-                    )
-                )
-                .statusCode != 0
-        )
+        assertTrue(KeyConvertCmd().test(listOf("-i")).statusCode != 0)
+        assertTrue(VCSignCmd().test(listOf("-k")).statusCode != 0)
+        assertTrue(VPCreateCmd().test(listOf("-hd", "did:example:holder")).statusCode != 0)
+        assertTrue(VPVerifyCmd().test(listOf("-n", "nonce")).statusCode != 0)
+        assertTrue(KeyGenerateCmd().test(listOf("-t", "unknown")).statusCode != 0)
     }
 
     @Test
     fun `installed Linux and tracked launchers work from unrelated directories`() {
-        val module =
-            File(".").canonicalFile
+        val module = File(".").canonicalFile
+        val installed = File(module, "build/install/waltid-jvm/bin/waltid")
+        val temporary = Files.createTempDirectory("cli-launcher-cwd").toFile()
 
-        val installed =
-            File(
-                module,
-                "build/install/waltid-jvm/bin/waltid"
-            )
-
-        val temporary =
-            Files
-                .createTempDirectory(
-                    "cli-launcher-cwd"
-                )
-                .toFile()
-
-        listOf(
-            module,
-            temporary
-        ).forEach { workingDirectory ->
-
-            val result =
-                run(
-                    listOf(
-                        installed.absolutePath,
-                        "--help"
-                    ),
-                    workingDirectory
-                )
-
-            assertEquals(
-                0,
-                result.exitCode,
-                result.output
-            )
-
-            assertContains(
-                result.output,
-                "Commands:"
-            )
+        listOf(module, temporary).forEach { workingDirectory ->
+            val result = run(listOf(installed.absolutePath, "--help"), workingDirectory)
+            assertEquals(0, result.exitCode, result.output)
+            assertContains(result.output, "Commands:")
         }
 
-        val tracked =
-            run(
-                listOf(
-                    "sh",
-                    File(
-                        module,
-                        "waltid-cli.sh"
-                    ).absolutePath,
-                    "--help"
-                ),
-                temporary
-            )
-
-        assertEquals(
-            0,
-            tracked.exitCode,
-            tracked.output
-        )
-
-        assertContains(
-            tracked.output,
-            "Commands:"
-        )
+        val tracked = run(listOf("sh", File(module, "waltid-cli.sh").absolutePath, "--help"), temporary)
+        assertEquals(0, tracked.exitCode, tracked.output)
+        assertContains(tracked.output, "Commands:")
     }
 
     @Test
     fun `Windows installed launcher uses bounded wildcard classpath`() {
-        val script =
-            File(
-                "build/install/waltid-jvm/bin/waltid.bat"
-            )
+        val script = File("build/install/waltid-jvm/bin/waltid.bat")
+        assertTrue(script.isFile)
 
-        assertTrue(
-            script.isFile
-        )
+        val content = script.readText()
+        assertContains(content, "%APP_HOME%\\lib\\*")
+        assertContains(content, "id.walt.cli.MainKt")
+        assertFalse(content.contains(".jar;"))
+        assertTrue(content.lineSequence().maxOf(String::length) < 8191)
 
-        val content =
-            script.readText()
-
-        assertContains(
-            content,
-            "%APP_HOME%\\lib\\*"
-        )
-
-        assertContains(
-            content,
-            "id.walt.cli.MainKt"
-        )
-
-        assertFalse(
-            content.contains(
-                ".jar;"
-            )
-        )
-
-        assertTrue(
-            content
-                .lineSequence()
-                .maxOf(String::length) < 8191
-        )
-
-        val tracked =
-            File(
-                "waltid-cli.bat"
-            ).readText()
-
-        assertContains(
-            tracked,
-            "%~dp0"
-        )
-
-        assertContains(
-            File(
-                "waltid-cli.sh"
-            ).readText(),
-            "SCRIPT_DIR"
-        )
-
-        assertContains(
-            File(
-                "waltid-cli-development.sh"
-            ).readText(),
-            "SCRIPT_DIR"
-        )
+        val tracked = File("waltid-cli.bat").readText()
+        assertContains(tracked, "%~dp0")
+        assertContains(File("waltid-cli.sh").readText(), "SCRIPT_DIR")
+        assertContains(File("waltid-cli-development.sh").readText(), "SCRIPT_DIR")
     }
 
-    private fun run(
-        command: List<String>,
-        workingDirectory: File
-    ): ProcessResult {
-
-        val process =
-            ProcessBuilder(command)
-                .directory(
-                    workingDirectory
-                )
-                .redirectErrorStream(true)
-                .start()
-
-        assertTrue(
-            process.waitFor(
-                30,
-                TimeUnit.SECONDS
-            ),
-            "Launcher timed out"
-        )
-
-        return ProcessResult(
-            process.exitValue(),
-            process
-                .inputStream
-                .bufferedReader()
-                .readText()
-        )
+    private fun run(command: List<String>, workingDirectory: File): ProcessResult {
+        val process = ProcessBuilder(command).directory(workingDirectory).redirectErrorStream(true).start()
+        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Launcher timed out")
+        return ProcessResult(process.exitValue(), process.inputStream.bufferedReader().readText())
     }
 
-    private data class ProcessResult(
-        val exitCode: Int,
-        val output: String
-    )
+    private data class ProcessResult(val exitCode: Int, val output: String)
 }
