@@ -1,133 +1,64 @@
-package id.walt.issuer2.web.plugins
+// 個人向け OAuth 認証
+authenticate("auth-oauth-individual") {
+    install(authOAuthInterceptor)
 
-import id.walt.commons.config.ConfigManager
-import id.walt.commons.web.modules.AuthenticationServiceModule
-import id.walt.issuer2.config.AuthenticationServiceConfig
-import id.walt.issuer2.config.Issuer2ServiceConfig
-import id.walt.issuer2.config.OAuthConfig
-import id.walt.issuer2.service.openid4vci.decodeExternalLoginAuthorizationParameters
-import io.klogging.noCoLogger
-import io.ktor.client.HttpClient
-import io.ktor.http.HttpMethod
-import io.ktor.http.URLBuilder
-import io.ktor.server.auth.OAuthServerSettings
-import io.ktor.server.auth.oauth
-import io.ktor.server.request.ApplicationRequest
-import io.ktor.server.request.path
+    get("external_login/individual/{internalAuthReq}", OpenId4VciRoutesDocs.externalLogin()) {
+        // 個人向け Keycloak へリダイレクト
+    }
 
-val issuer2AuthenticationPluginAmendment: suspend () -> Unit = suspend {
-    val authenticationServiceConfig = ConfigManager.getConfig<AuthenticationServiceConfig>()
-    val issuerServiceConfig = ConfigManager.getConfig<Issuer2ServiceConfig>()
+    get("external/individual/oauth/callback", OpenId4VciRoutesDocs.externalOAuthCallback()) {
+        val requestId = requireNotNull(call.callId) { "Missing call ID" }
+        val principal = call.principal<OAuthAccessTokenResponse.OAuth2>()
+        val idToken = principal?.extraParameters?.get("id_token")
+        val state = call.request.queryParameters["state"]
 
-    AuthenticationServiceModule.AuthenticationServiceConfig.apply {
-        customAuthentication = {
+        val response = protocolService.processExternalAuthorizationCallback(
+            authServerState = state,
+            idToken = idToken,
+            requestId = requestId,
+        )
 
-            // 個人向け認証
-            oauth("auth-oauth-individual") {
-                client = HttpClient()
-                providerLookup = {
-                    createOAuthSettings(
-                        config = authenticationServiceConfig.individual,
-                    )
-                }
-                urlProvider = {
-                    "${issuerServiceConfig.openId4VciBaseUrl()}/external/individual/oauth/callback"
-                }
-            }
+        response.redirectUri?.let { redirectUri ->
+            response.headers.filterKeys { it.lowercase() != "location" }
+                .forEach { (name, value) -> call.response.headers.append(name, value) }
 
-            // 法人向け認証
-            oauth("auth-oauth-corporate") {
-                client = HttpClient()
-                providerLookup = {
-                    createOAuthSettings(
-                        config = authenticationServiceConfig.corporate,
-                    )
-                }
-                urlProvider = {
-                    "${issuerServiceConfig.openId4VciBaseUrl()}/external/corporate/oauth/callback"
-                }
-            }
+            call.respondRedirect(redirectUri)
+        } ?: run {
+            response.headers.forEach { (name, value) -> call.response.headers.append(name, value) }
+            call.respond(HttpStatusCode.fromValue(response.status), response.body ?: "")
         }
     }
 }
 
-private fun createOAuthSettings(
-    config: OAuthConfig,
-): OAuthServerSettings.OAuth2ServerSettings =
-    OAuthServerSettings.OAuth2ServerSettings(
-        name = config.name,
-        authorizeUrl = config.authorizeUrl,
-        accessTokenUrl = config.accessTokenUrl,
-        clientId = config.clientId,
-        clientSecret = config.clientSecret,
-        defaultScopes = config.defaultScopes,
-        requestMethod = HttpMethod.Post,
-        authorizeUrlInterceptor = { request ->
-            if (config.forwardIssuerStateToAuthorizationServer) {
-                appendForwardedIssuerState(request)
-            }
-        },
-    )
 
-private const val FORWARDED_ISSUER_STATE_PARAMETER = "issuer_state"
-private const val EXTERNAL_LOGIN_PATH_SEGMENT = "/external_login/"
+// 法人向け OAuth 認証
+authenticate("auth-oauth-corporate") {
+    install(authOAuthInterceptor)
 
-private val logger = noCoLogger("ExternalLoginProvider")
-
-private fun URLBuilder.appendForwardedIssuerState(request: ApplicationRequest) {
-    if (parameters[FORWARDED_ISSUER_STATE_PARAMETER] != null) {
-        logger.trace("Skipping forwarded issuer state append: parameter already present")
-        return
+    get("external_login/corporate/{internalAuthReq}", OpenId4VciRoutesDocs.externalLogin()) {
+        // 法人向け Keycloak へリダイレクト
     }
 
-    val requestPath = request.path()
+    get("external/corporate/oauth/callback", OpenId4VciRoutesDocs.externalOAuthCallback()) {
+        val requestId = requireNotNull(call.callId) { "Missing call ID" }
+        val principal = call.principal<OAuthAccessTokenResponse.OAuth2>()
+        val idToken = principal?.extraParameters?.get("id_token")
+        val state = call.request.queryParameters["state"]
 
-    if (!requestPath.contains(EXTERNAL_LOGIN_PATH_SEGMENT)) {
-        logger.trace("Skipping forwarded issuer state append: external login path segment not found")
-        return
-    }
-
-    val internalAuthReq = requestPath.substringAfterLast("/")
-
-    if (internalAuthReq.isBlank()) {
-        logger.debug("Skipping forwarded issuer state append: internal auth request segment is blank")
-        return
-    }
-
-    val issuerStateValues = try {
-        internalAuthReq
-            .decodeExternalLoginAuthorizationParameters()[FORWARDED_ISSUER_STATE_PARAMETER]
-    } catch (e: Exception) {
-        logger.error("Failed to extract forwarded issuer state from internal auth request", e)
-        return
-    }
-
-    if (issuerStateValues == null) {
-        logger.trace("Skipping forwarded issuer state append: parameter not found")
-        return
-    }
-
-    if (issuerStateValues.size != 1) {
-        logger.warn(
-            "Skipping forwarded issuer state append: expected exactly 1 value, got ${issuerStateValues.size}"
+        val response = protocolService.processExternalAuthorizationCallback(
+            authServerState = state,
+            idToken = idToken,
+            requestId = requestId,
         )
-        return
-    }
 
-    val issuerState = issuerStateValues.single()
+        response.redirectUri?.let { redirectUri ->
+            response.headers.filterKeys { it.lowercase() != "location" }
+                .forEach { (name, value) -> call.response.headers.append(name, value) }
 
-    if (issuerState.isBlank()) {
-        logger.warn("Skipping forwarded issuer state append: value is blank")
-        return
-    }
-
-    try {
-        parameters.append(
-            FORWARDED_ISSUER_STATE_PARAMETER,
-            issuerState,
-        )
-        logger.info("Appended forwarded issuer state parameter")
-    } catch (e: Exception) {
-        logger.error("Failed to append forwarded issuer state parameter", e)
+            call.respondRedirect(redirectUri)
+        } ?: run {
+            response.headers.forEach { (name, value) -> call.response.headers.append(name, value) }
+            call.respond(HttpStatusCode.fromValue(response.status), response.body ?: "")
+        }
     }
 }
