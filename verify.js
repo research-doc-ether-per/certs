@@ -1,64 +1,30 @@
-// 個人向け OAuth 認証
-authenticate("auth-oauth-individual") {
-    install(authOAuthInterceptor)
+private const val AUTHENTICATION_PROVIDER_PARAMETER = "authentication_provider"
+private const val AUTHENTICATION_PROVIDER_INDIVIDUAL = "individual"
+private const val AUTHENTICATION_PROVIDER_CORPORATE = "corporate"
 
-    get("external_login/individual/{internalAuthReq}", OpenId4VciRoutesDocs.externalLogin()) {
-        // 個人向け Keycloak へリダイレクト
-    }
+// val redirectUri = "${metadataService.issuerBaseUrl()}/external_login/$authorizationRequestEnvelope"
+val authenticationProvider = resolvedParameters[AUTHENTICATION_PROVIDER_PARAMETER]?.singleOrNull()
+    ?: parameters[AUTHENTICATION_PROVIDER_PARAMETER]?.singleOrNull()
+    ?: AUTHENTICATION_PROVIDER_INDIVIDUAL
 
-    get("external/individual/oauth/callback", OpenId4VciRoutesDocs.externalOAuthCallback()) {
-        val requestId = requireNotNull(call.callId) { "Missing call ID" }
-        val principal = call.principal<OAuthAccessTokenResponse.OAuth2>()
-        val idToken = principal?.extraParameters?.get("id_token")
-        val state = call.request.queryParameters["state"]
+if (authenticationProvider != AUTHENTICATION_PROVIDER_INDIVIDUAL && authenticationProvider != AUTHENTICATION_PROVIDER_CORPORATE) {
+    val authorizationError = OAuthError(OAuthErrorCodes.INVALID_REQUEST, "Unsupported authentication provider: $authenticationProvider")
 
-        val response = protocolService.processExternalAuthorizationCallback(
-            authServerState = state,
-            idToken = idToken,
-            requestId = requestId,
-        )
+    notificationService.notify(
+        requestId = requestId,
+        session = issuanceSession,
+        event = IssuanceSessionEvent.AUTHORIZATION_REQUEST_FAILED,
+        error = authorizationError.error,
+        errorDescription = authorizationError.description,
+    )
 
-        response.redirectUri?.let { redirectUri ->
-            response.headers.filterKeys { it.lowercase() != "location" }
-                .forEach { (name, value) -> call.response.headers.append(name, value) }
-
-            call.respondRedirect(redirectUri)
-        } ?: run {
-            response.headers.forEach { (name, value) -> call.response.headers.append(name, value) }
-            call.respond(HttpStatusCode.fromValue(response.status), response.body ?: "")
-        }
-    }
+    return oauth2Provider.writeAuthorizationError(authorizationRequest, authorizationError)
 }
 
+val redirectUri = "${metadataService.issuerBaseUrl()}/external_login/$authenticationProvider/$authorizationRequestEnvelope"
 
-// 法人向け OAuth 認証
-authenticate("auth-oauth-corporate") {
-    install(authOAuthInterceptor)
-
-    get("external_login/corporate/{internalAuthReq}", OpenId4VciRoutesDocs.externalLogin()) {
-        // 法人向け Keycloak へリダイレクト
-    }
-
-    get("external/corporate/oauth/callback", OpenId4VciRoutesDocs.externalOAuthCallback()) {
-        val requestId = requireNotNull(call.callId) { "Missing call ID" }
-        val principal = call.principal<OAuthAccessTokenResponse.OAuth2>()
-        val idToken = principal?.extraParameters?.get("id_token")
-        val state = call.request.queryParameters["state"]
-
-        val response = protocolService.processExternalAuthorizationCallback(
-            authServerState = state,
-            idToken = idToken,
-            requestId = requestId,
-        )
-
-        response.redirectUri?.let { redirectUri ->
-            response.headers.filterKeys { it.lowercase() != "location" }
-                .forEach { (name, value) -> call.response.headers.append(name, value) }
-
-            call.respondRedirect(redirectUri)
-        } ?: run {
-            response.headers.forEach { (name, value) -> call.response.headers.append(name, value) }
-            call.respond(HttpStatusCode.fromValue(response.status), response.body ?: "")
-        }
-    }
-}
+return AuthorizationResponseHttp(
+    status = 302,
+    redirectUri = redirectUri,
+    headers = mapOf("Location" to redirectUri),
+)
