@@ -1,1 +1,3 @@
-
+サンプルではまだ実際に確認していませんが、Webhookを利用すれば実現できると思います。
+Credential間の値比較になるため、Webhook側で同一Verification Session内の複数Credentialを紐付けて比較する処理が必要です。
+例えば、Credential Aの値を一時保存し、Credential Bを受け取った後に比較して、一時保存したデータを削除し、結果を返す形になると思います。
