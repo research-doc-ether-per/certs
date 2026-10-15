@@ -1,92 +1,138 @@
-// custom-issuer-data-function-webhook-server
+const getCredentialStringValue = async (type) => {
+  console.debug("*** getCredentialStringValue start ***");
 
-const express = require('express')
+  try {
+    let result;
 
-const app = express()
-const port = Number(process.env.PORT || 5105)
+    if (type === "Awards") {
+      result = "Excellent Performance";
+    } else if (type === "Career") {
+      result = "Engineering";
+    } else if (type === "Qualifications") {
+      result = "Advanced";
+    } else {
+      throw new Error(`Unsupported credential type: ${type}`);
+    }
 
-app.use(express.json())
+    console.debug("result : ", result);
 
-// リクエスト内容を出力
-function logRequest(req) {
-  console.log('\n==================================================')
-  console.log('[Issuer Data Function Webhook]')
-  console.log('==================================================')
-  console.log('Method:', req.method)
-  console.log('URL:', req.originalUrl)
-  console.log('Params:', req.params)
-  console.log('Query:', req.query)
-  console.log('Headers:', JSON.stringify(req.headers, null, 2))
-  console.log('==================================================\n')
-}
-
-// Health Check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'custom-issuer-data-function-webhook-server'
-  })
-})
-
-// webhook
-// primitive / string を返す
-app.get('/webhook/:credentialType/string', (req, res) => {
-  logRequest(req)
-
-  const credentialType = req.params.credentialType.toLowerCase()
-
-  switch (credentialType) {
-    case 'awards':
-      return res.type('text/plain').send('Excellent Performance')
-
-    case 'career':
-      return res.type('text/plain').send('Engineering')
-
-    case 'qualifications':
-      return res.type('text/plain').send('Advanced')
-
-    default:
-      return res.status(400).type('text/plain').send('Unsupported credential type')
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** getCredentialStringValue end ***");
   }
-})
+};
 
-// webhook-json
-// JSON を返す
-app.get('/webhook/:credentialType/json', (req, res) => {
-  logRequest(req)
+const getCredentialJsonValue = async (type) => {
+  console.debug("*** getCredentialJsonValue start ***");
 
-  const credentialType = req.params.credentialType.toLowerCase()
+  try {
+    let result;
 
-  switch (credentialType) {
-    case 'awards':
-      return res.json({
-        category: 'Performance',
+    if (type === "Awards") {
+      result = {
+        category: "Performance",
         year: 2026,
-        rank: 'Gold'
-      })
-
-    case 'career':
-      return res.json({
-        employmentType: 'Full-time',
-        yearsOfExperience: 7
-      })
-
-    case 'qualifications':
-      return res.json({
-        issuerName: 'Example Certification Authority',
+        rank: "Gold",
+      };
+    } else if (type === "Career") {
+      result = {
+        employmentType: "Full-time",
+        yearsOfExperience: 7,
+      };
+    } else if (type === "Qualifications") {
+      result = {
+        issuerName: "Example Certification Authority",
         issuedYear: 2024,
-        valid: true
-      })
+        valid: true,
+      };
+    } else {
+      throw new Error(`Unsupported credential type: ${type}`);
+    }
 
-    default:
-      return res.status(400).json({
-        error: 'Unsupported credential type'
-      })
+    console.debug("result : ", result);
+
+    return result;
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+    throw error;
+  } finally {
+    console.debug("*** getCredentialJsonValue end ***");
   }
-})
+};
 
-app.listen(port, '0.0.0.0', () => {
-  console.log('Custom Issuer Data Function Webhook Server started')
-  console.log(`Listening: http://0.0.0.0:${port}`)
-  console.log(`Health: http://localhost:${port}/health`)
-})
+const getCredentialString = async (req, res) => {
+  console.debug("*** getCredentialString start ***");
+
+  try {
+    console.debug("method : ", req.method);
+    console.debug("url : ", req.originalUrl);
+    console.debug("params : ", req.params);
+    console.debug("query : ", req.query);
+    console.debug("headers : ", req.headers);
+
+    const type = req.params.type;
+
+    const result = await getCredentialStringValue(type);
+
+    return res.type("text/plain").send(result);
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+
+    return res
+      .status(400)
+      .type("text/plain")
+      .send(error.message);
+  } finally {
+    console.debug("*** getCredentialString end ***");
+  }
+};
+
+const getCredentialJson = async (req, res) => {
+  console.debug("*** getCredentialJson start ***");
+
+  try {
+    console.debug("method : ", req.method);
+    console.debug("url : ", req.originalUrl);
+    console.debug("params : ", req.params);
+    console.debug("query : ", req.query);
+    console.debug("headers : ", req.headers);
+
+    const type = req.params.type;
+
+    const result = await getCredentialJsonValue(type);
+
+    return res.json(result);
+  } catch (error) {
+    console.error("error.message: ", error.message);
+    console.error("error.stack: ", error.stack);
+
+    return res.status(400).json({
+      error: error.message,
+    });
+  } finally {
+    console.debug("*** getCredentialJson end ***");
+  }
+};
+
+module.exports = {
+  getCredentialString,
+  getCredentialJson,
+};
+
+
+app.get(
+  "/webhook/:type/string",
+  credentialService.getCredentialString
+);
+
+app.get(
+  "/webhook/:type/json",
+  credentialService.getCredentialJson
+);
+
