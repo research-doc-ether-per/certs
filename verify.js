@@ -1,5 +1,1 @@
-確認1について、承知しました。
 
-確認2についてですが、index取得時にはCredential IDが必要です。
-Credential IDを事前にこちらで生成して指定する場合は対応可能です。そのIDを使ってVC Registry APIからindexを取得し、Offer発行時にcredentialStatusへ設定できるため、walt.id側でcredentialStatusに関する追加対応も不要になります。
-ただし、Credential IDをmappingによって決定する場合は、index取得時点ではまだIDが確定していないため、walt.id側の処理順やCredential IDの生成処理を修正する必要があると思います。
