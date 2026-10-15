@@ -1,5 +1,1 @@
-Issuer API2のWebhookについては、以前お話しした通り、発行処理の通知用の機能です。
-そのため、Webhookの返却値をruntimeOverrides経由でCredentialに設定することはできない認識です。
-こちらでは、まずWebhook受信用のサンプルAPIを作成して、Issuer API2から送られてくる内容を確認してみます。
 
-今回やりたいこととしては、Webhookで取得した情報を使って値を取得し、その値をmappingに設定してCredentialへ反映する、という理解で合っていますか？
