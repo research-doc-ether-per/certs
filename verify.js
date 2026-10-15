@@ -1,138 +1,157 @@
-const getCredentialStringValue = async (type) => {
-  console.debug("*** getCredentialStringValue start ***");
+# custom-issuer-data-function-webhook-server
 
-  try {
-    let result;
+walt.id Issuer API2 の Data Functions で使用する Webhook の動作確認用サンプルサーバです。
 
-    if (type === "Awards") {
-      result = "Excellent Performance";
-    } else if (type === "Career") {
-      result = "Engineering";
-    } else if (type === "Qualifications") {
-      result = "Advanced";
-    } else {
-      throw new Error(`Unsupported credential type: ${type}`);
+`<webhook:...>` および `<webhook-json:...>` から呼び出される API を提供し、Credential Type に応じて固定値を返します。
+
+## Data Functions
+
+### webhook
+
+```text
+<webhook:URL>
+```
+
+Webhook の Response を String として Credential に設定します。
+
+### webhook-json
+
+```text
+<webhook-json:URL>
+```
+
+Webhook の Response を JSON として解析し、Credential に設定します。
+
+
+
+## Issuer API2 での使用例
+
+### Awards
+
+```json
+{
+  "additionalInfo": "<webhook:http://10.0.2.15:5105/webhook/Awards/string>",
+  "awardDetails": "<webhook-json:http://10.0.2.15:5105/webhook/Awards/json>"
+}
+```
+
+### Career
+
+```json
+{
+  "departmentName": "<webhook:http://10.0.2.15:5105/webhook/Career/string>",
+  "employmentDetails": "<webhook-json:http://10.0.2.15:5105/webhook/Career/json>"
+}
+```
+
+### Qualifications
+
+```json
+{
+  "qualificationLevel": "<webhook:http://10.0.2.15:5105/webhook/Qualifications/string>",
+  "qualificationDetails": "<webhook-json:http://10.0.2.15:5105/webhook/Qualifications/json>"
+}
+```
+
+## runtimeOverrides での使用例
+
+Offer 発行時に `runtimeOverrides.mapping` から指定できます。
+
+例：
+
+```json
+{
+  "runtimeOverrides": {
+    "mapping": {
+      "id": "<uuid>",
+      "issuer": {
+        "id": "<issuerDid>"
+      },
+      "credentialSubject": {
+        "id": "<subjectDid>",
+        "additionalInfo": "<webhook:http://10.0.2.15:5105/webhook/Awards/string>",
+        "awardDetails": "<webhook-json:http://10.0.2.15:5105/webhook/Awards/json>"
+      },
+      "issuanceDate": "<timestamp>",
+      "expirationDate": "<timestamp-in:365d>"
     }
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-    throw error;
-  } finally {
-    console.debug("*** getCredentialStringValue end ***");
   }
-};
-
-const getCredentialJsonValue = async (type) => {
-  console.debug("*** getCredentialJsonValue start ***");
-
-  try {
-    let result;
-
-    if (type === "Awards") {
-      result = {
-        category: "Performance",
-        year: 2026,
-        rank: "Gold",
-      };
-    } else if (type === "Career") {
-      result = {
-        employmentType: "Full-time",
-        yearsOfExperience: 7,
-      };
-    } else if (type === "Qualifications") {
-      result = {
-        issuerName: "Example Certification Authority",
-        issuedYear: 2024,
-        valid: true,
-      };
-    } else {
-      throw new Error(`Unsupported credential type: ${type}`);
-    }
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-    throw error;
-  } finally {
-    console.debug("*** getCredentialJsonValue end ***");
-  }
-};
-
-const getCredentialString = async (req, res) => {
-  console.debug("*** getCredentialString start ***");
-
-  try {
-    console.debug("method : ", req.method);
-    console.debug("url : ", req.originalUrl);
-    console.debug("params : ", req.params);
-    console.debug("query : ", req.query);
-    console.debug("headers : ", req.headers);
-
-    const type = req.params.type;
-
-    const result = await getCredentialStringValue(type);
-
-    return res.type("text/plain").send(result);
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-
-    return res
-      .status(400)
-      .type("text/plain")
-      .send(error.message);
-  } finally {
-    console.debug("*** getCredentialString end ***");
-  }
-};
-
-const getCredentialJson = async (req, res) => {
-  console.debug("*** getCredentialJson start ***");
-
-  try {
-    console.debug("method : ", req.method);
-    console.debug("url : ", req.originalUrl);
-    console.debug("params : ", req.params);
-    console.debug("query : ", req.query);
-    console.debug("headers : ", req.headers);
-
-    const type = req.params.type;
-
-    const result = await getCredentialJsonValue(type);
-
-    return res.json(result);
-  } catch (error) {
-    console.error("error.message: ", error.message);
-    console.error("error.stack: ", error.stack);
-
-    return res.status(400).json({
-      error: error.message,
-    });
-  } finally {
-    console.debug("*** getCredentialJson end ***");
-  }
-};
-
-module.exports = {
-  getCredentialString,
-  getCredentialJson,
-};
+}
+```
 
 
-app.get(
-  "/webhook/:type/string",
-  credentialService.getCredentialString
-);
 
-app.get(
-  "/webhook/:type/json",
-  credentialService.getCredentialJson
-);
+## Health Check
 
+```http
+GET /health
+```
+
+Response：
+
+```json
+{
+  "status": "ok",
+  "service": "custom-issuer-data-function-webhook-server"
+}
+```
+
+## Endpoint 一覧
+
+| Method | Endpoint | Data Function | Credential Type | Response |
+|---|---|---|---|---|
+| GET | `/webhook/Awards/string` | `webhook` | Awards | `Excellent Performance` |
+| GET | `/webhook/Awards/json` | `webhook-json` | Awards | JSON |
+| GET | `/webhook/Career/string` | `webhook` | Career | `Engineering` |
+| GET | `/webhook/Career/json` | `webhook-json` | Career | JSON |
+| GET | `/webhook/Qualifications/string` | `webhook` | Qualifications | `Advanced` |
+| GET | `/webhook/Qualifications/json` | `webhook-json` | Qualifications | JSON |
+
+### Response 例
+
+#### Awards
+
+`GET /webhook/Awards/json`
+
+```json
+{
+  "category": "Performance",
+  "year": 2026,
+  "rank": "Gold"
+}
+```
+
+#### Career
+
+`GET /webhook/Career/json`
+
+```json
+{
+  "employmentType": "Full-time",
+  "yearsOfExperience": 7
+}
+```
+
+#### Qualifications
+
+`GET /webhook/Qualifications/json`
+
+```json
+{
+  "issuerName": "Example Certification Authority",
+  "issuedYear": 2024,
+  "valid": true
+}
+```
+
+
+## 構成
+
+```text
+custom-issuer-data-function-webhook-server/
+├─ src/
+│  ├─ app.js
+│  └─ credentialService.js
+├─ package.json
+└─ README.md
+```
