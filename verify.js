@@ -1,14 +1,24 @@
-"webhook-json" to {
-    val url = it.args!!
-    val response = webDataFetcher.fetch<JsonElement>(url)
-    val result = response.body
+is JsonPrimitive -> {
+    when {
+        v.isTemplate() -> {
+            println("[DEBUG] patch key = $k")
+            println("[DEBUG] patch mapping value = $v")
 
-    println("Webhook URL: $url")
-    println("Webhook Status: ${response.status}")
-    println("Webhook Result: $result")
+            val result = getTemplateData(
+                v.content,
+                dataFunctions,
+                context,
+                functionHistory
+            )
 
-    result
-},
+            println("[DEBUG] Data Function result = $result")
+            println("[DEBUG] Result type = ${result::class.simpleName}")
 
+            this[k] = result
 
+            println("[DEBUG] Merged credentialStatus = ${this["credentialStatus"]}")
+        }
 
+        else -> this[k] = v
+    }
+}
