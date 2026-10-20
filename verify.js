@@ -82,29 +82,30 @@ GROUP BY 1, 2, 3, 4;
 
 
 
--- Disclosureのエンコード形式を確認する
-WITH decoded AS (
-  SELECT
-    convert_from(
-      decode(
-        translate(disclosures, '-_', '+/') ||
-        repeat('=', (4 - length(disclosures) % 4) % 4),
-        'base64'
-      ),
-      'UTF8'
-    ) AS value
-  FROM credentials
-  WHERE format = 'vc+sd-jwt'
-)
+
+-- Disclosureの保存形式と区切り文字を確認する
 SELECT
-  LEFT(LTRIM(value), 1) AS decoded_prefix,
-  LENGTH(value) AS decoded_length,
-  CASE
-    WHEN value IS JSON THEN jsonb_typeof(value::jsonb)
-    ELSE 'not_json'
-  END AS decoded_type
-FROM decoded;
+  format,
+  LENGTH(disclosures) AS disclosures_length,
+  POSITION('~' IN disclosures) > 0 AS has_separator,
+  LENGTH(disclosures) - LENGTH(REPLACE(disclosures, '~', '')) AS separator_count,
+  ARRAY_LENGTH(STRING_TO_ARRAY(disclosures, '~'), 1) AS segment_count
+FROM credentials
+WHERE format = 'vc+sd-jwt';
 
 
+
+-- Disclosureを区切り文字ごとに分割して確認する
+SELECT
+  c.format,
+  s.ordinality AS segment_index,
+  LENGTH(s.segment) AS segment_length,
+  LENGTH(s.segment) = 0 AS is_empty
+FROM credentials c
+CROSS JOIN LATERAL
+  UNNEST(STRING_TO_ARRAY(c.disclosures, '~'))
+  WITH ORDINALITY AS s(segment, ordinality)
+WHERE c.format = 'vc+sd-jwt'
+ORDER BY c.id, s.ordinality;
 
 
