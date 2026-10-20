@@ -81,13 +81,29 @@ GROUP BY 1, 2, 3, 4;
 
 
 
--- SD-JWTのDisclosures形式を確認する
+
+-- Disclosureのエンコード形式を確認する
+WITH decoded AS (
+  SELECT
+    convert_from(
+      decode(
+        translate(disclosures, '-_', '+/') ||
+        repeat('=', (4 - length(disclosures) % 4) % 4),
+        'base64'
+      ),
+      'UTF8'
+    ) AS value
+  FROM credentials
+  WHERE format = 'vc+sd-jwt'
+)
 SELECT
-  format,
-  jsonb_typeof(disclosures::jsonb) AS disclosures_type,
-  jsonb_array_length(disclosures::jsonb) AS disclosures_count
-FROM credentials
-WHERE format = 'vc+sd-jwt';
+  LEFT(LTRIM(value), 1) AS decoded_prefix,
+  LENGTH(value) AS decoded_length,
+  CASE
+    WHEN value IS JSON THEN jsonb_typeof(value::jsonb)
+    ELSE 'not_json'
+  END AS decoded_type
+FROM decoded;
 
 
 
