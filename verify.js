@@ -47,3 +47,22 @@ SELECT
 FROM credentials
 LIMIT 10;
 
+
+-- KeyのJSONフィールド構造を確認する
+SELECT DISTINCT
+  jsonb_object_keys(document::jsonb) AS key_name
+FROM wallet_keys
+ORDER BY key_name;
+
+
+
+-- Credentialの保存形式を確認する
+SELECT
+  format,
+  LEFT(document, 20) AS document_prefix,
+  LENGTH(document) AS document_length,
+  LENGTH(disclosures) AS disclosures_length,
+  LEFT(LTRIM(disclosures), 1) AS disclosures_prefix
+FROM credentials
+ORDER BY format;
+
