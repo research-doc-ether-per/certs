@@ -66,3 +66,29 @@ SELECT
 FROM credentials
 ORDER BY format;
 
+
+
+
+-- Keyの種類とJWK構造を確認する
+SELECT
+  document::jsonb ->> 'type' AS key_type,
+  document::jsonb -> 'jwk' ->> 'kty' AS jwk_type,
+  document::jsonb -> 'jwk' ->> 'crv' AS curve,
+  document::jsonb -> 'jwk' ? 'd' AS has_private_key,
+  COUNT(*) AS count
+FROM wallet_keys
+GROUP BY 1, 2, 3, 4;
+
+
+
+-- SD-JWTのDisclosures形式を確認する
+SELECT
+  format,
+  jsonb_typeof(disclosures::jsonb) AS disclosures_type,
+  jsonb_array_length(disclosures::jsonb) AS disclosures_count
+FROM credentials
+WHERE format = 'vc+sd-jwt';
+
+
+
+
