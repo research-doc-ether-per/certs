@@ -109,3 +109,38 @@ WHERE c.format = 'vc+sd-jwt'
 ORDER BY c.id, s.ordinality;
 
 
+
+
+
+-- SD-JWT Disclosureの構造を確認する
+WITH segments AS (
+  SELECT
+    c.id,
+    s.ordinality AS segment_index,
+    s.segment
+  FROM credentials c
+  CROSS JOIN LATERAL
+    UNNEST(STRING_TO_ARRAY(c.disclosures, '~'))
+    WITH ORDINALITY AS s(segment, ordinality)
+  WHERE c.format = 'vc+sd-jwt'
+),
+decoded AS (
+  SELECT
+    id,
+    segment_index,
+    convert_from(
+      decode(
+        translate(segment, '-_', '+/') ||
+        repeat('=', (4 - length(segment) % 4) % 4),
+        'base64'
+      ),
+      'UTF8'
+    ) AS value
+  FROM segments
+)
+SELECT
+  segment_index,
+  jsonb_typeof(value::jsonb) AS disclosure_type,
+  jsonb_array_length(value::jsonb) AS element_count
+FROM decoded
+ORDER BY id, segment_index;
