@@ -18,7 +18,8 @@ docker exec -e PGPASSWORD=waltid -i \
 
 docker exec -e PGPASSWORD=waltid -it \
   docker-compose-postgres-1 \
-  psql -U waltid -d postgres -c "\l"
+  psql -U waltid -d waltid_v0151_source \
+  -c "SELECT COUNT(*) FROM public.accounts;"
 
 // ----
 
