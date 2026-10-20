@@ -1,9 +1,1 @@
-println("===========================================")
-println("Migration ${if (dryRun) "DRY RUN " else ""}complete")
-println("Wallets:          $walletCount")
-println("Keys:             $keyCount")
-println("Credentials:      $credentialCount")
-println("DIDs:             $didCount")
-println("Account mappings: $accountMappingCount")
-println("Errors:           $errorCount")
-println("===========================================")
+
