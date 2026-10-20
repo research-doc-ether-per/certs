@@ -144,3 +144,20 @@ SELECT
   jsonb_array_length(value::jsonb) AS element_count
 FROM decoded
 ORDER BY id, segment_index;
+
+
+
+-- 移行用Credentialデータを生成する
+SELECT
+  wallet AS old_wallet_id,
+  id AS old_credential_id,
+  format AS old_format,
+  CASE
+    WHEN format = 'jwt_vc_json' THEN document
+    WHEN format = 'vc+sd-jwt' THEN
+      document || '~' || disclosures || '~'
+  END AS raw_credential
+FROM credentials
+WHERE format IN ('jwt_vc_json', 'vc+sd-jwt')
+ORDER BY wallet, id;
+
