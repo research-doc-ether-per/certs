@@ -1,1034 +1,205 @@
+# waltid-custom-migration
 
-require("dotenv").config();
+## 概要
 
-const { Client } = require("pg");
+`waltid-custom-migration` は、walt.id v0.15.1 から v1.0.0 へのデータベース移行時に、公式の `waltid-wallet-migration` では移行されないユーザー関連情報を移行するための JavaScript ツールです。
 
-const SOURCE_SCHEMA = process.env.SOURCE_SCHEMA || "public";
-const TARGET_SCHEMA = process.env.TARGET_SCHEMA || "wallet_app";
+公式ツールでは Wallet・Key・DID・Credential、およびアカウントと Wallet の関連（`wallet2_account_wallets`）を移行しますが、次の情報は移行対象外です。
 
-const MIGRATION_TABLES = [
-  "accounts",
-  "oidclogins",
-  "account_wallet_mapping",
-];
+- アカウント情報（`accounts`）
+- OIDC ログイン情報（`oidclogins`）
+- アカウントと Wallet の権限情報（`account_wallet_mapping.permissions`）
 
-const command = process.argv[2];
-const dryRun = process.argv.includes("--dry-run");
+これらの情報を保持するため、v1.0.0 側の PostgreSQL にカスタムスキーマ `wallet_app` を作成し、必要なユーザー関連情報を移行します。既存の `wallet2_*` テーブルへの書き込みは行いません。
 
-// PostgreSQL 識別子の検証
-const quoteId = (value) => {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
-    throw new Error(`Invalid SQL identifier: ${value}`);
+> 本ツールはデータ移行のみを対象とします。移行後のアカウントを Wallet API2 のログイン処理や権限判定で利用するには、別途アプリケーション側の連携実装が必要です。
+
+## 動作環境
+
+- Node.js 22 以上
+- PostgreSQL（移行元：v0.15.1、移行先：v1.0.0）
+- JavaScript（CommonJS）
+- npm パッケージ：`pg`、`dotenv`
+## package.json の scripts
+
+```json
+{
+  "scripts": {
+    "db:init": "node src/index.js init",
+    "migrate:dry-run": "node src/index.js migrate --dry-run",
+    "migrate": "node src/index.js migrate",
+    "verify": "node src/index.js verify",
+    "check": "node --check src/index.js"
   }
+}
+```
+## ディレクトリ構成
 
-  return `"${value}"`;
-};
-
-const qs = quoteId(SOURCE_SCHEMA);
-const qt = quoteId(TARGET_SCHEMA);
-
-const createClient = (envName) => {
-  const connectionString = process.env[envName];
-
-  if (!connectionString) {
-    throw new Error(`Missing ${envName} in .env`);
-  }
-
-  return new Client({ connectionString });
-};
-
-const source = createClient("SOURCE_DATABASE_URL");
-const target = createClient("TARGET_DATABASE_URL");
-
-// エラーログ出力
-const logError = (error) => {
-  console.error("error.message: ", error.message);
-  console.error("error.stack: ", error.stack);
-};
-
-// カラム値を文字列に変換
-const getTextField = (row, ...names) => {
-  for (const name of names) {
-    if (
-      Object.prototype.hasOwnProperty.call(row, name) &&
-      row[name] !== null &&
-      row[name] !== undefined
-    ) {
-      return String(row[name]);
-    }
-  }
-
-  return null;
-};
-
-// テーブルの存在確認
-const tableExists = async (client, schema, table) => {
-  console.debug("*** tableExists start ***");
-
-  try {
-    const response = await client.query(
-      `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = $1
-          AND table_name = $2
-          AND table_type = 'BASE TABLE'
-      ) AS exists
-      `,
-      [schema, table]
-    );
-
-    const result = response.rows[0].exists;
-
-    console.debug("result : ", { table, exists: result });
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** tableExists end ***");
-  }
-};
-
-// 移行元テーブルの確認
-const validateSourceTables = async () => {
-  console.debug("*** validateSourceTables start ***");
-
-  try {
-    for (const table of MIGRATION_TABLES) {
-      const exists = await tableExists(
-        source,
-        SOURCE_SCHEMA,
-        table
-      );
-
-      if (!exists) {
-        throw new Error(
-          `Source table not found: ${SOURCE_SCHEMA}.${table}`
-        );
-      }
-    }
-
-    console.debug("result : ", {
-      tables: MIGRATION_TABLES,
-    });
-
-    return true;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** validateSourceTables end ***");
-  }
-};
-
-// 移行先スキーマ・テーブルの作成
-const createSchema = async () => {
-  console.debug("*** createSchema start ***");
-
-  try {
-    await target.query(`
-      CREATE SCHEMA IF NOT EXISTS ${qt}
-    `);
-
-    await target.query(`
-      CREATE TABLE IF NOT EXISTS ${qt}.accounts (
-        account_id TEXT PRIMARY KEY,
-        name TEXT,
-        email TEXT,
-        password_hash TEXT,
-        created_on TEXT
-      )
-    `);
-
-    await target.query(`
-      CREATE TABLE IF NOT EXISTS ${qt}.account_wallet_permissions (
-        account_id TEXT NOT NULL,
-        wallet_id TEXT NOT NULL,
-        permissions TEXT,
-        added_on TEXT,
-        PRIMARY KEY (account_id, wallet_id)
-      )
-    `);
-
-    await target.query(`
-      CREATE TABLE IF NOT EXISTS ${qt}.account_oidc_logins (
-        account_id TEXT NOT NULL,
-        oidc_id TEXT NOT NULL,
-        PRIMARY KEY (account_id, oidc_id)
-      )
-    `);
-
-    await target.query(`
-      CREATE INDEX IF NOT EXISTS idx_walt_custom_accounts_email
-      ON ${qt}.accounts (email)
-    `);
-
-    await target.query(`
-      CREATE INDEX IF NOT EXISTS idx_walt_custom_perm_wallet
-      ON ${qt}.account_wallet_permissions (wallet_id)
-    `);
-
-    await target.query(`
-      CREATE INDEX IF NOT EXISTS idx_walt_custom_oidc_id
-      ON ${qt}.account_oidc_logins (oidc_id)
-    `);
-
-    const result = {
-      schema: TARGET_SCHEMA,
-      initialized: true,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** createSchema end ***");
-  }
-};
-
-// 移行先テーブル構造の確認
-const validateTargetSchema = async () => {
-  console.debug("*** validateTargetSchema start ***");
-
-  try {
-    const definitions = {
-      accounts: {
-        columns: [
-          "account_id",
-          "name",
-          "email",
-          "password_hash",
-          "created_on",
-        ],
-        primaryKey: ["account_id"],
-      },
-      account_wallet_permissions: {
-        columns: [
-          "account_id",
-          "wallet_id",
-          "permissions",
-          "added_on",
-        ],
-        primaryKey: ["account_id", "wallet_id"],
-      },
-      account_oidc_logins: {
-        columns: [
-          "account_id",
-          "oidc_id",
-        ],
-        primaryKey: ["account_id", "oidc_id"],
-      },
-    };
-
-    for (const [table, definition] of Object.entries(definitions)) {
-      const response = await target.query(
-        `
-        SELECT column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = $1
-          AND table_name = $2
-        `,
-        [TARGET_SCHEMA, table]
-      );
-
-      const columns = new Map(
-        response.rows.map((row) => [
-          row.column_name,
-          row.data_type,
-        ])
-      );
-
-      const missing = definition.columns.filter(
-        (column) => !columns.has(column)
-      );
-
-      if (missing.length > 0) {
-        throw new Error(
-          `Invalid target table ${table}. Missing: ${missing.join(", ")}`
-        );
-      }
-
-      const invalidTypes = definition.columns.filter(
-        (column) => columns.get(column) !== "text"
-      );
-
-      if (invalidTypes.length > 0) {
-        throw new Error(
-          `Invalid column types in ${table}: ${invalidTypes.join(", ")}`
-        );
-      }
-
-      const primaryKeyResponse = await target.query(
-        `
-        SELECT a.attname AS column_name
-        FROM pg_constraint c
-        JOIN pg_class t
-          ON t.oid = c.conrelid
-        JOIN pg_namespace n
-          ON n.oid = t.relnamespace
-        JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, position)
-          ON TRUE
-        JOIN pg_attribute a
-          ON a.attrelid = t.oid
-         AND a.attnum = k.attnum
-        WHERE n.nspname = $1
-          AND t.relname = $2
-          AND c.contype = 'p'
-        ORDER BY k.position
-        `,
-        [TARGET_SCHEMA, table]
-      );
-
-      const actualPrimaryKey = primaryKeyResponse.rows.map(
-        (row) => row.column_name
-      );
-
-      if (
-        JSON.stringify(actualPrimaryKey) !==
-        JSON.stringify(definition.primaryKey)
-      ) {
-        throw new Error(
-          `Invalid primary key in ${table}: ${actualPrimaryKey.join(", ")}`
-        );
-      }
-    }
-
-    console.debug("result : ", {
-      schema: TARGET_SCHEMA,
-      valid: true,
-    });
-
-    return true;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** validateTargetSchema end ***");
-  }
-};
-
-// 移行元データの取得
-const extractRows = async (table) => {
-  console.debug("*** extractRows start ***");
-
-  try {
-    if (!MIGRATION_TABLES.includes(table)) {
-      throw new Error(`Unsupported source table: ${table}`);
-    }
-
-    const response = await source.query(`
-      SELECT to_jsonb(t) AS payload
-      FROM ${qs}.${quoteId(table)} t
-    `);
-
-    const result = response.rows.map(
-      (row) => row.payload
-    );
-
-    console.debug("result : ", {
-      table,
-      count: result.length,
-    });
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** extractRows end ***");
-  }
-};
-
-// アカウント情報の移行
-const migrateAccount = async (row) => {
-  console.debug("*** migrateAccount start ***");
-
-  try {
-    const accountId = getTextField(row, "id");
-
-    if (!accountId) {
-      throw new Error("accounts.id is missing");
-    }
-
-    const response = await target.query(
-      `
-      INSERT INTO ${qt}.accounts (
-        account_id,
-        name,
-        email,
-        password_hash,
-        created_on
-      )
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (account_id)
-      DO UPDATE SET
-        name = EXCLUDED.name,
-        email = EXCLUDED.email,
-        password_hash = EXCLUDED.password_hash,
-        created_on = EXCLUDED.created_on
-      `,
-      [
-        accountId,
-        getTextField(row, "name"),
-        getTextField(row, "email"),
-        getTextField(row, "password"),
-        getTextField(row, "createdOn", "created_on"),
-      ]
-    );
-
-    const result = {
-      accountId,
-      migrated: response.rowCount === 1,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** migrateAccount end ***");
-  }
-};
-
-// OIDC ログイン情報の移行
-const migrateOidcLogin = async (row) => {
-  console.debug("*** migrateOidcLogin start ***");
-
-  try {
-    const accountId = getTextField(
-      row,
-      "accountId",
-      "account_id"
-    );
-
-    const oidcId = getTextField(
-      row,
-      "oidcId",
-      "oidc_id"
-    );
-
-    if (!accountId || !oidcId) {
-      throw new Error(
-        "oidclogins.accountId or oidcId is missing"
-      );
-    }
-
-    const response = await target.query(
-      `
-      INSERT INTO ${qt}.account_oidc_logins (
-        account_id,
-        oidc_id
-      )
-      VALUES ($1, $2)
-      ON CONFLICT (account_id, oidc_id)
-      DO NOTHING
-      `,
-      [accountId, oidcId]
-    );
-
-    const result = {
-      accountId,
-      migrated: true,
-      inserted: response.rowCount === 1,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** migrateOidcLogin end ***");
-  }
-};
-
-// Wallet 権限情報の移行
-const migratePermissions = async (row) => {
-  console.debug("*** migratePermissions start ***");
-
-  try {
-    const accountId = getTextField(row, "id");
-    const walletId = getTextField(row, "wallet");
-
-    if (!accountId || !walletId) {
-      throw new Error(
-        "account_wallet_mapping.id or wallet is missing"
-      );
-    }
-
-    const response = await target.query(
-      `
-      INSERT INTO ${qt}.account_wallet_permissions (
-        account_id,
-        wallet_id,
-        permissions,
-        added_on
-      )
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (account_id, wallet_id)
-      DO UPDATE SET
-        permissions = EXCLUDED.permissions,
-        added_on = EXCLUDED.added_on
-      `,
-      [
-        accountId,
-        walletId,
-        getTextField(row, "permissions"),
-        getTextField(row, "added_on", "addedOn"),
-      ]
-    );
-
-    const result = {
-      accountId,
-      walletId,
-      migrated: response.rowCount === 1,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** migratePermissions end ***");
-  }
-};
-
-// テーブル単位の移行処理
-const migrateTable = async (table) => {
-  console.debug("*** migrateTable start ***");
-
-  try {
-    const rows = await extractRows(table);
-    let migratedCount = 0;
-
-    for (const row of rows) {
-      switch (table) {
-        case "accounts":
-          await migrateAccount(row);
-          break;
-
-        case "oidclogins":
-          await migrateOidcLogin(row);
-          break;
-
-        case "account_wallet_mapping":
-          await migratePermissions(row);
-          break;
-
-        default:
-          throw new Error(`Unsupported table: ${table}`);
-      }
-
-      migratedCount++;
-    }
-
-    const result = {
-      table,
-      sourceCount: rows.length,
-      migratedCount,
-    };
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** migrateTable end ***");
-  }
-};
-
-// 移行処理
-const migrate = async () => {
-  console.debug("*** migrate start ***");
-
-  let transactionStarted = false;
-
-  try {
-    await validateSourceTables();
-
-    await target.query("BEGIN");
-    transactionStarted = true;
-
-    await createSchema();
-    await validateTargetSchema();
-
-    const results = [];
-
-    for (const table of MIGRATION_TABLES) {
-      const result = await migrateTable(table);
-      results.push(result);
-    }
-
-    const total = results.reduce(
-      (sum, result) => sum + result.migratedCount,
-      0
-    );
-
-    if (dryRun) {
-      await target.query("ROLLBACK");
-      transactionStarted = false;
-    } else {
-      await target.query("COMMIT");
-      transactionStarted = false;
-    }
-
-    console.log("====================================");
-    console.log(
-      dryRun
-        ? "Migration DRY RUN complete"
-        : "Migration complete"
-    );
-    console.log("====================================");
-
-    for (const result of results) {
-      console.log(
-        `${result.table}: ${result.migratedCount}`
-      );
-    }
-
-    console.log(`Total: ${total}`);
-    console.log("Errors: 0");
-    console.log("====================================");
-
-    console.debug("result : ", {
-      dryRun,
-      total,
-      tables: results,
-    });
-
-    return results;
-  } catch (error) {
-    if (transactionStarted) {
-      try {
-        await target.query("ROLLBACK");
-      } catch (rollbackError) {
-        logError(rollbackError);
-      }
-    }
-
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** migrate end ***");
-  }
-};
-
-// レコード識別キーの取得
-const getRecordKey = (table, row) => {
-  switch (table) {
-    case "accounts":
-      return getTextField(row, "id");
-
-    case "oidclogins": {
-      const accountId = getTextField(
-        row,
-        "accountId",
-        "account_id"
-      );
-
-      const oidcId = getTextField(
-        row,
-        "oidcId",
-        "oidc_id"
-      );
-
-      return accountId && oidcId
-        ? JSON.stringify([accountId, oidcId])
-        : null;
-    }
-
-    case "account_wallet_mapping": {
-      const accountId = getTextField(row, "id");
-      const walletId = getTextField(row, "wallet");
-
-      return accountId && walletId
-        ? JSON.stringify([accountId, walletId])
-        : null;
-    }
-
-    default:
-      throw new Error(`Unsupported table: ${table}`);
-  }
-};
-
-// 移行元と移行先のフィールド比較
-const compareMigratedRow = (table, sourceRow, targetRow) => {
-  if (!targetRow) {
-    return false;
-  }
-
-  switch (table) {
-    case "accounts":
-      return (
-        targetRow.account_id === getTextField(sourceRow, "id") &&
-        targetRow.name === getTextField(sourceRow, "name") &&
-        targetRow.email === getTextField(sourceRow, "email") &&
-        targetRow.password_hash ===
-          getTextField(sourceRow, "password") &&
-        targetRow.created_on ===
-          getTextField(sourceRow, "createdOn", "created_on")
-      );
-
-    case "oidclogins":
-      return (
-        targetRow.account_id ===
-          getTextField(sourceRow, "accountId", "account_id") &&
-        targetRow.oidc_id ===
-          getTextField(sourceRow, "oidcId", "oidc_id")
-      );
-
-    case "account_wallet_mapping":
-      return (
-        targetRow.account_id === getTextField(sourceRow, "id") &&
-        targetRow.wallet_id === getTextField(sourceRow, "wallet") &&
-        targetRow.permissions ===
-          getTextField(sourceRow, "permissions") &&
-        targetRow.added_on ===
-          getTextField(sourceRow, "added_on", "addedOn")
-      );
-
-    default:
-      return false;
-  }
-};
-
-// 移行先テーブル名の取得
-const getTargetTableName = (table) => {
-  const mappings = {
-    accounts: "accounts",
-    oidclogins: "account_oidc_logins",
-    account_wallet_mapping: "account_wallet_permissions",
-  };
-
-  const result = mappings[table];
-
-  if (!result) {
-    throw new Error(`Unsupported table: ${table}`);
-  }
-
-  return result;
-};
-
-// テーブル単位の移行検証
-const verifyTable = async (table) => {
-  console.debug("*** verifyTable start ***");
-
-  try {
-    const sourceRows = await extractRows(table);
-    const targetTable = getTargetTableName(table);
-
-    const response = await target.query(`
-      SELECT *
-      FROM ${qt}.${quoteId(targetTable)}
-    `);
-
-    const targetRows = response.rows;
-    const targetMap = new Map();
-
-    for (const row of targetRows) {
-      let key;
-
-      if (table === "accounts") {
-        key = row.account_id;
-      } else if (table === "oidclogins") {
-        key = JSON.stringify([
-          row.account_id,
-          row.oidc_id,
-        ]);
-      } else {
-        key = JSON.stringify([
-          row.account_id,
-          row.wallet_id,
-        ]);
-      }
-
-      if (targetMap.has(key)) {
-        throw new Error(
-          `Duplicate target key in ${table}: ${key}`
-        );
-      }
-
-      targetMap.set(key, row);
-    }
-
-    const sourceKeys = new Set();
-    let duplicateSourceKeys = false;
-    let matchedCount = 0;
-
-    for (const row of sourceRows) {
-      const key = getRecordKey(table, row);
-
-      if (!key) {
-        continue;
-      }
-
-      if (sourceKeys.has(key)) {
-        duplicateSourceKeys = true;
-      }
-
-      sourceKeys.add(key);
-
-      if (
-        compareMigratedRow(
-          table,
-          row,
-          targetMap.get(key)
-        )
-      ) {
-        matchedCount++;
-      }
-    }
-
-    const ok =
-      !duplicateSourceKeys &&
-      sourceRows.length === targetRows.length &&
-      matchedCount === sourceRows.length;
-
-    const result = {
-      table,
-      sourceCount: sourceRows.length,
-      targetCount: targetRows.length,
-      matchedCount,
-      ok,
-    };
-
-    console.log(
-      `${ok ? "OK" : "NG"} ${table}: ` +
-      `source=${result.sourceCount}, ` +
-      `target=${result.targetCount}, ` +
-      `matched=${result.matchedCount}`
-    );
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** verifyTable end ***");
-  }
-};
-
-// アカウントと Wallet の関連確認
-const verifyAccountWalletRelations = async () => {
-  console.debug("*** verifyAccountWalletRelations start ***");
-
-  try {
-    const missingAccountsResponse = await target.query(`
-      SELECT COUNT(*)::int AS count
-      FROM ${qt}.account_wallet_permissions p
-      LEFT JOIN ${qt}.accounts a
-        ON a.account_id = p.account_id
-      WHERE a.account_id IS NULL
-    `);
-
-    const missingAccounts =
-      missingAccountsResponse.rows[0].count;
-
-    const missingOidcResponse = await target.query(`
-      SELECT COUNT(*)::int AS count
-      FROM ${qt}.account_oidc_logins o
-      LEFT JOIN ${qt}.accounts a
-        ON a.account_id = o.account_id
-      WHERE a.account_id IS NULL
-    `);
-
-    const missingOidcAccounts =
-      missingOidcResponse.rows[0].count;
-
-    const wallet2Exists = await tableExists(
-      target,
-      "public",
-      "wallet2_account_wallets"
-    );
-
-    let missingWalletMappings = null;
-
-    if (wallet2Exists) {
-      const response = await target.query(`
-        SELECT COUNT(*)::int AS count
-        FROM ${qt}.account_wallet_permissions p
-        LEFT JOIN public.wallet2_account_wallets w
-          ON w.account_id = p.account_id
-         AND w.wallet_id = p.wallet_id
-        WHERE w.account_id IS NULL
-      `);
-
-      missingWalletMappings = response.rows[0].count;
-    }
-
-    const ok =
-      missingAccounts === 0 &&
-      missingOidcAccounts === 0 &&
-      wallet2Exists &&
-      missingWalletMappings === 0;
-
-    const result = {
-      missingAccounts,
-      missingOidcAccounts,
-      missingWalletMappings,
-      wallet2Exists,
-      ok,
-    };
-
-    console.log(
-      `${ok ? "OK" : "NG"} Account-Wallet relations`
-    );
-
-    console.log(`Missing accounts: ${missingAccounts}`);
-    console.log(
-      `Missing OIDC accounts: ${missingOidcAccounts}`
-    );
-    console.log(
-      `Missing wallet2 mappings: ${
-        missingWalletMappings === null
-          ? "NOT CHECKED"
-          : missingWalletMappings
-      }`
-    );
-
-    console.debug("result : ", result);
-
-    return result;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** verifyAccountWalletRelations end ***");
-  }
-};
-
-// 移行結果の検証
-const verify = async () => {
-  console.debug("*** verify start ***");
-
-  try {
-    await validateSourceTables();
-    await validateTargetSchema();
-
-    console.log("====================================");
-    console.log("Migration verification");
-    console.log("====================================");
-
-    const results = [];
-
-    for (const table of MIGRATION_TABLES) {
-      const result = await verifyTable(table);
-      results.push(result);
-    }
-
-    const relations = await verifyAccountWalletRelations();
-
-    const ok =
-      results.every((result) => result.ok) &&
-      relations.ok;
-
-    console.log("====================================");
-    console.log(
-      `Verification: ${ok ? "SUCCESS" : "FAILED"}`
-    );
-    console.log("====================================");
-
-    if (!ok) {
-      process.exitCode = 1;
-    }
-
-    console.debug("result : ", {
-      ok,
-      tables: results,
-      relations,
-    });
-
-    return ok;
-  } catch (error) {
-    logError(error);
-    throw error;
-  } finally {
-    console.debug("*** verify end ***");
-  }
-};
-
-// メイン処理
-const main = async () => {
-  console.debug("*** main start ***");
-
-  let sourceConnected = false;
-  let targetConnected = false;
-
-  try {
-    if (!["init", "migrate", "verify"].includes(command)) {
-      console.log(
-        "Usage: node src/index.js init | migrate [--dry-run] | verify"
-      );
-
-      process.exitCode = 2;
-      return;
-    }
-
-    if (command !== "init") {
-      await source.connect();
-      sourceConnected = true;
-    }
-
-    await target.connect();
-    targetConnected = true;
-
-    switch (command) {
-      case "init":
-        await createSchema();
-        await validateTargetSchema();
-
-        console.log(`Initialized schema: ${TARGET_SCHEMA}`);
-        break;
-
-      case "migrate":
-        await migrate();
-        break;
-
-      case "verify":
-        await verify();
-        break;
-    }
-
-    console.debug("result : ", {
-      command,
-      dryRun,
-    });
-  } catch (error) {
-    logError(error);
-    process.exitCode = 1;
-  } finally {
-    const connections = [];
-
-    if (sourceConnected) {
-      connections.push(source.end());
-    }
-
-    if (targetConnected) {
-      connections.push(target.end());
-    }
-
-    await Promise.allSettled(connections);
-
-    console.debug("*** main end ***");
-  }
-};
-
-main().catch((error) => {
-  logError(error);
-  process.exitCode = 1;
-});
+```text
+waltid-custom-migration/
+├── src/
+│   └── index.js
+├── sql/
+│   └── schema.sql
+├── .env
+├── .env.example
+├── package.json
+└── README.md
+```
+
+## 移行対象
+
+| 移行元（v0.15.1） | 移行先（v1.0.0 / `wallet_app`） | 内容 |
+|---|---|---|
+| `accounts` | `accounts` | アカウント ID、名前、メールアドレス、パスワードハッシュ、作成日時 |
+| `oidclogins` | `account_oidc_logins` | OIDC 識別子と既存アカウント ID の関連 |
+| `account_wallet_mapping` | `account_wallet_permissions` | アカウント ID、Wallet ID、権限、関連追加日時 |
+
+### カラムマッピング
+
+#### accounts → wallet_app.accounts
+
+| v0.15.1 カラム | v1.0.0 カラム | 処理 |
+|---|---|---|
+| `id` | `account_id` | 元の値を保持。主キー |
+| `name` | `name` | 元の値を保持。値がなければ `NULL` |
+| `email` | `email` | 元の値を保持。値がなければ `NULL` |
+| `password` | `password_hash` | ハッシュ文字列をそのまま保持。値がなければ `NULL` |
+| `createdOn` | `created_on` | 文字列として保持。値がなければ `NULL` |
+| `tenant` | — | 移行しない |
+
+#### oidclogins → wallet_app.account_oidc_logins
+
+| v0.15.1 カラム | v1.0.0 カラム | 処理 |
+|---|---|---|
+| `accountId` | `account_id` | 元の値を保持。複合主キー |
+| `oidcId` | `oidc_id` | 元の値を保持。複合主キー |
+| `tenant` | — | 移行しない |
+
+#### account_wallet_mapping → wallet_app.account_wallet_permissions
+
+| v0.15.1 カラム | v1.0.0 カラム | 処理 |
+|---|---|---|
+| `id` | `account_id` | 元のアカウント ID を保持。複合主キー |
+| `wallet` | `wallet_id` | 元の Wallet ID を保持。複合主キー |
+| `permissions` | `permissions` | 元の値を保持。値がなければ `NULL` |
+| `added_on` | `added_on` | 文字列として保持。値がなければ `NULL` |
+| `tenant` | — | 移行しない |
+
+### 移行先テーブル
+
+```text
+wallet_app.accounts
+wallet_app.account_oidc_logins
+wallet_app.account_wallet_permissions
+```
+
+各テーブルの主キー・カラム型・検索用インデックスは `sql/schema.sql` を参照してください。`raw` および `legacy_rows` は使用しません。
+
+## セットアップ
+
+### 1. 依存関係のインストール
+
+```bash
+node -v
+npm install
+```
+
+`package.json` には `"type": "commonjs"` を設定します。
+
+### 2. 環境変数の設定
+
+`.env.example` をコピーして `.env` を作成します。
+
+```bash
+cp .env.example .env
+```
+
+設定例：
+
+```dotenv
+SOURCE_DATABASE_URL=postgresql://waltid:<SOURCE_PASSWORD>@localhost:5432/waltid_v0151_source
+TARGET_DATABASE_URL=postgresql://waltid:<TARGET_PASSWORD>@localhost:5432/waltid
+SOURCE_SCHEMA=public
+TARGET_SCHEMA=wallet_app
+```
+
+`<SOURCE_PASSWORD>` と `<TARGET_PASSWORD>` は実際のパスワードに置き換えてください。パスワードに `@`、`#`、`%` などが含まれる場合は URL エンコードが必要です。`.env` は Git にコミットしないでください。
+
+### 3. 構文チェック
+
+```bash
+npm run check
+```
+
+### 4. テーブル初期化
+
+```bash
+npm run db:init
+```
+
+`wallet_app` スキーマと 3 つの移行先テーブル、および検索用インデックスを作成します。`CREATE TABLE IF NOT EXISTS` は既存テーブルの定義を更新しないため、旧定義（`tenant` や `raw` を含むテーブルなど）が残っている場合は事前に確認してください。
+
+### 5. Dry Run
+
+```bash
+npm run migrate:dry-run
+```
+
+移行処理をトランザクション内で実行し、最後に `ROLLBACK` します。成功時にもデータは確定されません。`db:init` を実行済みの場合、既存のテーブル定義はそのまま保持されます。
+
+### 6. 移行実行
+
+```bash
+npm run migrate
+```
+
+アカウント・Wallet 権限情報は主キーに基づいて UPSERT されます。OIDC ログイン情報は既存の組み合わせがあれば重複挿入しません。移行先のレコードを自動削除する処理はありません。
+
+### 7. 移行結果の検証
+
+```bash
+npm run verify
+```
+
+次の項目を確認します。
+
+- 3 テーブルの移行元・移行先の件数およびカラム値
+- OIDC ログイン情報に対応するアカウントの存在
+- Wallet 権限情報に対応するアカウントの存在
+- 公式ツールが作成した `public.wallet2_account_wallets` との関連
+
+`wallet2_account_wallets` が `public` 以外のスキーマに存在する場合、現在の `index.js` の検証 SQL を環境に合わせて修正してください。検証に失敗した場合は終了コードが `1` になります。
+
+## ログイン情報について
+
+### メールアドレス・パスワード認証
+
+旧 `accounts.password` のパスワードハッシュを `wallet_app.accounts.password_hash` に保存します。平文パスワードへの変換や再ハッシュ化は行いません。ログイン機能を引き継ぐ場合は、旧ハッシュ方式に対応した検証処理を Wallet API2 側に実装する必要があります。
+
+### OIDC 認証
+
+旧 `oidclogins.accountId` と `oidclogins.oidcId` を保存して、OIDC 識別子と元のアカウントの関連を維持します。OIDC プロバイダーの設定・クライアント設定・認証フローは移行しません。必要に応じて issuer と subject の対応をアプリケーション側で確認してください。
+
+同じアカウントがメール・パスワード認証と OIDC 認証の両方を利用する場合も、元の `account_id` を共通 ID として扱います。
+
+## 注意事項
+
+- 公式 `waltid-wallet-migration` による Wallet・Key・DID・Credential・Account-Wallet 関連の移行が完了していることを前提とします。
+- Custom Migration Tool は公式 `wallet2_*` テーブルへ書き込みません。
+- `tenant`、`raw`、`legacy_rows` は移行先の業務テーブルでは使用しません。
+- 元データの UUID などの識別子はテキストとして保存します。
+- `created_on` と `added_on` は PostgreSQL の日時型ではなく `TEXT` として保存します。
+- 原則として既存の移行先データをバックアップしてから実行してください。
+- 本ツールは既存レコードを自動削除しません。移行元からレコードが削除されても、移行先には残る場合があります。
+- 旧ユーザーの実際のログイン可否や権限チェックは、このツールだけでは保証されません。
+
+## 主な実行コマンド
+
+| コマンド | 内容 |
+|---|---|
+| `npm run check` | JavaScript の構文チェック |
+| `npm run db:init` | カスタムスキーマ・テーブル作成 |
+| `npm run migrate:dry-run` | ロールバック付きの移行確認 |
+| `npm run migrate` | データ移行 |
+| `npm run verify` | 移行結果の照合 |
