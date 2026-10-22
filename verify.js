@@ -1,32 +1,55 @@
 
-const argon2 = require("argon2");
-
-// パスワードハッシュの検証
-const verifyLegacyPassword = async (password, passwordHash) => {
-  console.debug("*** verifyLegacyPassword start ***");
+// アカウントに関連する Wallet と DID の取得
+const getWalletsByAccountId = async (accountId) => {
+  console.debug("*** getWalletsByAccountId start ***");
 
   try {
-    if (
-      typeof password !== "string" ||
-      !password ||
-      typeof passwordHash !== "string" ||
-      !passwordHash
-    ) {
-      return false;
+    if (!accountId) {
+      throw new Error("accountId is required");
     }
 
-    if (!passwordHash.startsWith("$argon2i$")) {
-      throw new Error("Unsupported legacy password hash format");
+    const sql = `
+      SELECT
+        w.wallet_id,
+        p.permissions,
+        p.added_on,
+        d.did
+      FROM public.wallet2_account_wallets w
+      LEFT JOIN ${qt}.account_wallet_permissions p
+        ON p.account_id = w.account_id
+       AND p.wallet_id = w.wallet_id
+      LEFT JOIN public.wallet2_wallet_did_stores wds
+        ON wds.wallet_id = w.wallet_id
+      LEFT JOIN public.wallet2_dids d
+        ON d.store_id = wds.store_id
+      WHERE w.account_id = $1
+      ORDER BY w.wallet_id, d.did
+    `;
+
+    const response = await executeQuery(sql, [accountId]);
+
+    const walletMap = new Map();
+
+    for (const row of response) {
+      if (!walletMap.has(row.wallet_id)) {
+        walletMap.set(row.wallet_id, {
+          walletId: row.wallet_id,
+          permissions: row.permissions,
+          addedOn: row.added_on,
+          dids: [],
+        });
+      }
+
+      const wallet = walletMap.get(row.wallet_id);
+
+      if (row.did && !wallet.dids.includes(row.did)) {
+        wallet.dids.push(row.did);
+      }
     }
 
-    const result = await argon2.verify(
-      passwordHash,
-      Buffer.from(password, "utf8")
-    );
+    const result = Array.from(walletMap.values());
 
-    console.debug("result : ", {
-      verified: result,
-    });
+    console.debug("result : ", result);
 
     return result;
   } catch (error) {
@@ -34,27 +57,6 @@ const verifyLegacyPassword = async (password, passwordHash) => {
     console.error("error.stack: ", error.stack);
     throw error;
   } finally {
-    console.debug("*** verifyLegacyPassword end ***");
+    console.debug("*** getWalletsByAccountId end ***");
   }
 };
-
-
-
-const account = await getAccountByEmail(email);
-
-if (!account || !account.password_hash) {
-  throw new Error("Invalid credentials");
-}
-
-const verified = await verifyLegacyPassword(
-  password,
-  account.password_hash
-);
-
-if (!verified) {
-  throw new Error("Invalid credentials");
-}
-
-const result = await createAuthResult(account);
-
-return result;
