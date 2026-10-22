@@ -1,23 +1,13 @@
+```bash
+# テーブル作成（この操作は DB に書き込みます）
+npm run db:init
 
-{
-  "name": "waltid-custom-migration",
-  "version": "1.0.0",
-  "private": true,
-  "description": "walt.id v0.15.1 to v1.0.0 PostgreSQL custom migration tool",
-  "type": "commonjs",
-  "main": "src/index.js",
-  "scripts": {
-    "db:init": "node src/index.js init",
-    "migrate:dry-run": "node src/index.js migrate --dry-run",
-    "migrate": "node src/index.js migrate",
-    "verify": "node src/index.js verify",
-    "check": "node --check src/index.js"
-  },
-  "engines": {
-    "node": ">=22.0.0"
-  },
-  "dependencies": {
-    "dotenv": "^16.4.5",
-    "pg": "^8.13.1"
-  }
-}
+# トランザクション内で全処理して ROLLBACK（保存しない）
+npm run migrate:dry-run
+
+# 実データ移行
+npm run migrate
+
+# 元データと JSONB アーカイブの件数・内容を比較
+npm run verify
+```
