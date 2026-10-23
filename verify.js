@@ -1,17 +1,51 @@
-#### account_wallet_mapping → wallet_app.account_wallet_permissions
+CREATE SCHEMA IF NOT EXISTS wallet_app;
 
-| v0.15.1 カラム | v1.0.0 カラム | 処理 |
-|---|---|---|
-| `id` | `account_id` | 元のアカウント ID を保持。複合主キー |
-| `wallet` | `wallet_id` | 元の Wallet ID を保持。複合主キー |
-| `permissions` | `permissions` | 元の値を保持。値がなければ `NULL` |
-| `added_on` | `added_on` | 文字列として保持。値がなければ `NULL` |
-| `tenant` | — | 移行しない |
+-- アカウント情報
+CREATE TABLE IF NOT EXISTS wallet_app.accounts (
+    account_id TEXT PRIMARY KEY,
+    name TEXT,
+    email TEXT,
+    password_hash TEXT,
+    created_on TEXT
+);
 
-#### wallets → wallet_app.account_wallet_permissions
+-- アカウントと Wallet の関連情報
+CREATE TABLE IF NOT EXISTS wallet_app.account_wallets (
+    account_id TEXT NOT NULL,
+    wallet_id TEXT NOT NULL,
+    wallet_name TEXT,
+    added_on TEXT,
+    PRIMARY KEY (account_id, wallet_id)
+);
 
-| v0.15.1 カラム | v1.0.0 カラム | 処理 |
-|---|---|---|
-| `id` | — | `account_wallet_mapping.wallet` と紐付けるために使用 |
-| `name` | `wallet_name` | 対応する Wallet 名を保持 |
-| `createdOn` | — | 移行しない |
+-- OIDC ログイン情報
+CREATE TABLE IF NOT EXISTS wallet_app.account_oidc_logins (
+    account_id TEXT NOT NULL,
+    oidc_id TEXT NOT NULL,
+    PRIMARY KEY (account_id, oidc_id)
+);
+
+-- DID Alias 情報
+CREATE TABLE IF NOT EXISTS wallet_app.did_aliases (
+    wallet_id TEXT NOT NULL,
+    did TEXT NOT NULL,
+    alias TEXT NOT NULL,
+    created_on TEXT,
+    PRIMARY KEY (wallet_id, did)
+);
+
+-- 検索用インデックス
+CREATE INDEX IF NOT EXISTS idx_walt_custom_accounts_email
+    ON wallet_app.accounts (email);
+
+CREATE INDEX IF NOT EXISTS idx_walt_custom_wallet_id
+    ON wallet_app.account_wallets (wallet_id);
+
+CREATE INDEX IF NOT EXISTS idx_walt_custom_oidc_id
+    ON wallet_app.account_oidc_logins (oidc_id);
+
+CREATE INDEX IF NOT EXISTS idx_walt_custom_did_alias_wallet
+    ON wallet_app.did_aliases (wallet_id);
+
+CREATE INDEX IF NOT EXISTS idx_walt_custom_did_alias_did
+    ON wallet_app.did_aliases (did);
