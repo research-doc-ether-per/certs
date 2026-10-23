@@ -1,924 +1,446 @@
-const { Client } = require('pg')
-const log4js = require('log4js')
-let log4jsConfig = require('../config/log4js.json')
-const { db } = require('../config/config.json')
+const postgresService = require('./postgres-client-service')
 
-const fileName = 'migrate'
-log4jsConfig.appenders.file.filename = `./logs/${fileName}.log`
-log4js.configure(log4jsConfig)
-const logger = log4js.getLogger(fileName)
+let logger
 
-const SOURCE_SCHEMA = db.source_schema || 'public'
-const TARGET_SCHEMA = db.target_schema || 'wallet_app'
-
-const MIGRATION_TABLES = [
-    'accounts',
-    'oidclogins',
-    'account_wallet_mapping',
-    'wallet_dids',
-]
-
-const REQUIRED_SOURCE_TABLES = [
-    'accounts',
-    'oidclogins',
-    'account_wallet_mapping',
-    'wallets',
-    'wallet_dids',
-]
-
-const command = process.argv[2]
-const dryRun = process.argv.includes('--dry-run')
-
-// PostgreSQL 識別子の検証
-const quoteId = (value) => {
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
-        throw new Error(`Invalid SQL identifier: ${value}`)
-    }
-
-    return `"${value}"`
+const setLogger = (log) => {
+    logger = log
+    postgresService.setLogger(log)
 }
 
-const qs = quoteId(SOURCE_SCHEMA)
-const qt = quoteId(TARGET_SCHEMA)
-
-const source = new Client({
-    connectionString: db.source_database_url,
-})
-
-const target = new Client({
-    connectionString: db.target_database_url,
-})
-
-// エラーログ
-const logError = (error) => {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-}
-
-// カラム値の取得
-const getTextField = (row, ...names) => {
-    for (const name of names) {
-        if (Object.hasOwn(row, name)) {
-            const value = row[name]
-            return value === null || value === undefined
-                ? null
-                : String(value)
-        }
-    }
-
-    return null
-}
-
-// テーブル作成
-const createSchema = async () => {
-    logger.debug('*** createSchema start ***')
-
-    try {
-        await target.query(`
-            CREATE SCHEMA IF NOT EXISTS ${qt}
-        `)
-
-        // アカウント情報
-        await target.query(`
-            CREATE TABLE IF NOT EXISTS ${qt}.accounts (
-                account_id TEXT PRIMARY KEY,
-                name TEXT,
-                email TEXT,
-                password_hash TEXT,
-                created_on TEXT
-            )
-        `)
-
-        // アカウントと Wallet の関連情報
-        await target.query(`
-            CREATE TABLE IF NOT EXISTS ${qt}.account_wallets (
-                account_id TEXT NOT NULL,
-                wallet_id TEXT NOT NULL,
-                wallet_name TEXT,
-                added_on TEXT,
-                PRIMARY KEY (account_id, wallet_id)
-            )
-        `)
-
-        // OIDC ログイン情報
-        await target.query(`
-            CREATE TABLE IF NOT EXISTS ${qt}.account_oidc_logins (
-                account_id TEXT NOT NULL,
-                oidc_id TEXT NOT NULL,
-                PRIMARY KEY (account_id, oidc_id)
-            )
-        `)
-
-        // DID Alias 情報
-        await target.query(`
-            CREATE TABLE IF NOT EXISTS ${qt}.did_aliases (
-                wallet_id TEXT NOT NULL,
-                did TEXT NOT NULL,
-                alias TEXT NOT NULL,
-                created_on TEXT,
-                PRIMARY KEY (wallet_id, did)
-            )
-        `)
-
-        // 検索用インデックス
-        await target.query(`
-            CREATE INDEX IF NOT EXISTS idx_walt_custom_accounts_email
-            ON ${qt}.accounts (email)
-        `)
-
-        await target.query(`
-            CREATE INDEX IF NOT EXISTS idx_walt_custom_wallet_id
-            ON ${qt}.account_wallets (wallet_id)
-        `)
-
-        await target.query(`
-            CREATE INDEX IF NOT EXISTS idx_walt_custom_oidc_id
-            ON ${qt}.account_oidc_logins (oidc_id)
-        `)
-
-        await target.query(`
-            CREATE INDEX IF NOT EXISTS idx_walt_custom_did_alias_wallet
-            ON ${qt}.did_aliases (wallet_id)
-        `)
-
-        await target.query(`
-            CREATE INDEX IF NOT EXISTS idx_walt_custom_did_alias_did
-            ON ${qt}.did_aliases (did)
-        `)
-
-        const result = {
-            schema: TARGET_SCHEMA,
-            initialized: true,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** createSchema end ***')
-    }
-}
-
-// 移行元テーブルの取得
-const getSourceTables = async () => {
-    logger.debug('*** getSourceTables start ***')
+// Account ID で検索
+const getAccountById = async (accountId) => {
+    logger.debug('*** getAccountById start ***')
 
     try {
         const sql = `
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = $1
-              AND table_type = 'BASE TABLE'
-        `
-
-        const response = await source.query(
-            sql,
-            [SOURCE_SCHEMA]
-        )
-
-        const result = new Set(
-            response.rows.map((row) => row.table_name)
-        )
-
-        logger.debug('result : ', {
-            tableCount: result.size,
-        })
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** getSourceTables end ***')
-    }
-}
-
-// 移行元テーブルの確認
-const assertSourceTables = async () => {
-    logger.debug('*** assertSourceTables start ***')
-
-    try {
-        const actual = await getSourceTables()
-
-        const missing = REQUIRED_SOURCE_TABLES.filter(
-            (table) => !actual.has(table)
-        )
-
-        if (missing.length > 0) {
-            throw new Error(
-                `Missing source tables: ${missing.join(', ')}`
-            )
-        }
-
-        const result = {
-            checked: REQUIRED_SOURCE_TABLES.length,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** assertSourceTables end ***')
-    }
-}
-
-// 移行先テーブル構造の確認
-const assertTargetSchema = async () => {
-    logger.debug('*** assertTargetSchema start ***')
-
-    try {
-        const definitions = {
-            accounts: [
-                'account_id',
-                'name',
-                'email',
-                'password_hash',
-                'created_on',
-            ],
-            account_wallets: [
-                'account_id',
-                'wallet_id',
-                'wallet_name',
-                'added_on',
-            ],
-            account_oidc_logins: [
-                'account_id',
-                'oidc_id',
-            ],
-            did_aliases: [
-                'wallet_id',
-                'did',
-                'alias',
-                'created_on',
-            ],
-        }
-
-        for (const [table, requiredColumns] of Object.entries(definitions)) {
-            const response = await target.query(
-                `
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = $1
-                  AND table_name = $2
-                `,
-                [
-                    TARGET_SCHEMA,
-                    table,
-                ]
-            )
-
-            const columns = new Set(
-                response.rows.map(
-                    (row) => row.column_name
-                )
-            )
-
-            const missing = requiredColumns.filter(
-                (column) => !columns.has(column)
-            )
-
-            if (missing.length > 0) {
-                throw new Error(
-                    `${TARGET_SCHEMA}.${table} missing columns: ${missing.join(', ')}`
-                )
-            }
-        }
-
-        const result = {
-            schemaValidated: true,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** assertTargetSchema end ***')
-    }
-}
-
-// 移行元データの取得
-const extractRows = async (table) => {
-    logger.debug('*** extractRows start ***')
-
-    try {
-        if (!MIGRATION_TABLES.includes(table)) {
-            throw new Error(
-                `Unexpected migration table: ${table}`
-            )
-        }
-
-        const sql = `
-            SELECT to_jsonb(t) AS payload
-            FROM ${qs}.${quoteId(table)} t
-        `
-
-        const response = await source.query(sql)
-
-        const result = response.rows.map(
-            (row) => row.payload
-        )
-
-        logger.debug('result : ', {
-            table,
-            rowCount: result.length,
-        })
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** extractRows end ***')
-    }
-}
-
-// アカウント情報の移行
-const migrateAccount = async (row) => {
-    logger.debug('*** migrateAccount start ***')
-
-    try {
-        const accountId = getTextField(row, 'id')
-
-        if (!accountId) {
-            throw new Error(
-                'accounts.id is missing'
-            )
-        }
-
-        const sql = `
-            INSERT INTO ${qt}.accounts (
+            SELECT
                 account_id,
                 name,
                 email,
                 password_hash,
                 created_on
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (account_id)
-            DO UPDATE SET
-                name = EXCLUDED.name,
-                email = EXCLUDED.email,
-                password_hash = EXCLUDED.password_hash,
-                created_on = EXCLUDED.created_on
+            FROM ${postgresService.qt}.accounts
+            WHERE account_id = $1
         `
 
-        const response = await target.query(
-            sql,
-            [
-                accountId,
-                getTextField(row, 'name'),
-                getTextField(row, 'email'),
-                getTextField(row, 'password'),
-                getTextField(
-                    row,
-                    'createdOn',
-                    'created_on'
-                ),
-            ]
-        )
+        const response = await postgresService.executeQuery(sql, [accountId])
+        const result = response[0] ?? null
 
-        const result = {
-            accountId,
-            migrated: response.rowCount === 1,
-        }
-
-        logger.debug('result : ', result)
+        logger.debug('result : ', {
+            found: result !== null,
+        })
 
         return result
     } catch (error) {
-        logError(error)
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** migrateAccount end ***')
+        logger.debug('*** getAccountById end ***')
     }
 }
 
-// アカウントと Wallet の関連情報の移行
-const migrateAccountWallet = async (row) => {
-    logger.debug('*** migrateAccountWallet start ***')
+// Email で検索
+const getAccountByEmail = async (email) => {
+    logger.debug('*** getAccountByEmail start ***')
 
     try {
-        const accountId = getTextField(row, 'id')
-        const walletId = getTextField(row, 'wallet')
-
-        if (!accountId || !walletId) {
-            throw new Error(
-                'account_wallet_mapping.id or wallet is missing'
-            )
-        }
-
-        const walletResponse = await source.query(
-            `
-            SELECT name
-            FROM ${qs}.wallets
-            WHERE id = $1
-            `,
-            [walletId]
-        )
-
-        const walletName =
-            walletResponse.rows[0]?.name ?? null
-
         const sql = `
-            INSERT INTO ${qt}.account_wallets (
+            SELECT
                 account_id,
+                name,
+                email,
+                password_hash,
+                created_on
+            FROM ${postgresService.qt}.accounts
+            WHERE email = $1
+        `
+
+        const response = await postgresService.executeQuery(sql, [email])
+        const result = response[0] ?? null
+
+        logger.debug('result : ', {
+            found: result !== null,
+        })
+
+        return result
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getAccountByEmail end ***')
+    }
+}
+
+// OIDC ID で検索
+const getAccountByOidcId = async (oidcId) => {
+    logger.debug('*** getAccountByOidcId start ***')
+
+    try {
+        const sql = `
+            SELECT
+                a.account_id,
+                a.name,
+                a.email,
+                a.password_hash,
+                a.created_on
+            FROM ${postgresService.qt}.account_oidc_logins o
+            INNER JOIN ${postgresService.qt}.accounts a
+                ON a.account_id = o.account_id
+            WHERE o.oidc_id = $1
+        `
+
+        const response = await postgresService.executeQuery(sql, [oidcId])
+        const result = response[0] ?? null
+
+        logger.debug('result : ', {
+            found: result !== null,
+        })
+
+        return result
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getAccountByOidcId end ***')
+    }
+}
+
+// Official DB: Account に関連する Wallet の取得
+const getWalletList = async (accountId) => {
+    logger.debug('*** getWalletList start ***')
+
+    try {
+        const sql = `
+            SELECT
+                aw.wallet_id,
+                w.default_did_id,
+                w.default_key_id
+            FROM public.wallet2_account_wallets aw
+            INNER JOIN public.wallet2_wallets w
+                ON w.id = aw.wallet_id
+            WHERE aw.account_id = $1
+        `
+
+        const response = await postgresService.executeQuery(sql, [accountId])
+
+        logger.debug('result : ', {
+            walletCount: response.length,
+        })
+
+        return response
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getWalletList end ***')
+    }
+}
+
+// Custom DB: Account と Wallet の関連情報
+const getAccountWallets = async (accountId) => {
+    logger.debug('*** getAccountWallets start ***')
+
+    try {
+        const sql = `
+            SELECT
                 wallet_id,
                 wallet_name,
                 added_on
-            )
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (account_id, wallet_id)
-            DO UPDATE SET
-                wallet_name = EXCLUDED.wallet_name,
-                added_on = EXCLUDED.added_on
+            FROM ${postgresService.qt}.account_wallets
+            WHERE account_id = $1
         `
 
-        const response = await target.query(
-            sql,
-            [
-                accountId,
-                walletId,
-                walletName,
-                getTextField(
-                    row,
-                    'added_on',
-                    'addedOn'
-                ),
-            ]
-        )
+        const response = await postgresService.executeQuery(sql, [accountId])
 
-        const result = {
-            accountId,
-            walletId,
-            walletName,
-            migrated: response.rowCount === 1,
-        }
+        logger.debug('result : ', {
+            walletCount: response.length,
+        })
 
-        logger.debug('result : ', result)
-
-        return result
+        return response
     } catch (error) {
-        logError(error)
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** migrateAccountWallet end ***')
+        logger.debug('*** getAccountWallets end ***')
     }
 }
 
-// OIDC ログイン情報の移行
-const migrateOidcLogin = async (row) => {
-    logger.debug('*** migrateOidcLogin start ***')
+// Official DB: Wallet に関連する DID の取得
+const getWalletDids = async (walletIds) => {
+    logger.debug('*** getWalletDids start ***')
 
     try {
-        const accountId = getTextField(
-            row,
-            'accountId',
-            'account_id'
-        )
-
-        const oidcId = getTextField(
-            row,
-            'oidcId',
-            'oidc_id'
-        )
-
-        if (!accountId || !oidcId) {
-            throw new Error(
-                'oidclogins.accountId or oidcId is missing'
-            )
+        if (!walletIds || walletIds.length === 0) {
+            return []
         }
 
         const sql = `
-            INSERT INTO ${qt}.account_oidc_logins (
-                account_id,
-                oidc_id
-            )
-            VALUES ($1, $2)
-            ON CONFLICT (account_id, oidc_id)
-            DO NOTHING
+            SELECT
+                wds.wallet_id,
+                d.did,
+                d.document
+            FROM public.wallet2_wallet_did_stores wds
+            INNER JOIN public.wallet2_dids d
+                ON d.store_id = wds.store_id
+            WHERE wds.wallet_id = ANY($1::text[])
         `
 
-        const response = await target.query(
-            sql,
-            [
-                accountId,
-                oidcId,
-            ]
-        )
+        const response = await postgresService.executeQuery(sql, [walletIds])
 
-        const result = {
-            accountId,
-            oidcId,
-            migrated: response.rowCount === 1,
-        }
+        logger.debug('result : ', {
+            didCount: response.length,
+        })
 
-        logger.debug('result : ', result)
-
-        return result
+        return response
     } catch (error) {
-        logError(error)
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** migrateOidcLogin end ***')
+        logger.debug('*** getWalletDids end ***')
     }
 }
 
-// DID Alias 情報の移行
-const migrateDidAlias = async (row) => {
-    logger.debug('*** migrateDidAlias start ***')
+// Official DB: Wallet に関連する Key の取得
+const getWalletKeys = async (walletIds) => {
+    logger.debug('*** getWalletKeys start ***')
 
     try {
-        const walletId = getTextField(
-            row,
-            'wallet'
-        )
-
-        const did = getTextField(
-            row,
-            'did'
-        )
-
-        const alias = getTextField(
-            row,
-            'alias'
-        )
-
-        if (!walletId || !did) {
-            throw new Error(
-                'wallet_dids.wallet or did is missing'
-            )
-        }
-
-        if (alias === null) {
-            throw new Error(
-                'wallet_dids.alias is missing'
-            )
+        if (!walletIds || walletIds.length === 0) {
+            return []
         }
 
         const sql = `
-            INSERT INTO ${qt}.did_aliases (
+            SELECT
+                wks.wallet_id,
+                k.key_id,
+                k.serialized_key
+            FROM public.wallet2_wallet_key_stores wks
+            INNER JOIN public.wallet2_keys k
+                ON k.store_id = wks.store_id
+            WHERE wks.wallet_id = ANY($1::text[])
+        `
+
+        const response = await postgresService.executeQuery(sql, [walletIds])
+
+        logger.debug('result : ', {
+            keyCount: response.length,
+        })
+
+        return response
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getWalletKeys end ***')
+    }
+}
+
+// Custom DB: DID Alias の取得
+const getDidAliases = async (walletIds) => {
+    logger.debug('*** getDidAliases start ***')
+
+    try {
+        if (!walletIds || walletIds.length === 0) {
+            return []
+        }
+
+        const sql = `
+            SELECT
                 wallet_id,
                 did,
-                alias,
-                created_on
-            )
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (wallet_id, did)
-            DO UPDATE SET
-                alias = EXCLUDED.alias,
-                created_on = EXCLUDED.created_on
+                alias
+            FROM ${postgresService.qt}.did_aliases
+            WHERE wallet_id = ANY($1::text[])
         `
 
-        const response = await target.query(
-            sql,
-            [
-                walletId,
-                did,
-                alias,
-                getTextField(
-                    row,
-                    'createdOn',
-                    'created_on'
-                ),
-            ]
+        const response = await postgresService.executeQuery(sql, [walletIds])
+
+        logger.debug('result : ', {
+            aliasCount: response.length,
+        })
+
+        return response
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getDidAliases end ***')
+    }
+}
+
+// DID Document から Key ID を取得
+const resolveDidKeyId = (didRow, keyRows, defaultDid, defaultKeyId) => {
+    if (didRow.did === defaultDid && defaultKeyId) {
+        return defaultKeyId
+    }
+
+    if (!didRow.document) {
+        return null
+    }
+
+    try {
+        const document =
+            typeof didRow.document === 'string'
+                ? JSON.parse(didRow.document)
+                : didRow.document
+
+        const verificationMethods = document.verificationMethod || []
+
+        for (const method of verificationMethods) {
+            const methodId = method.id || ''
+
+            for (const key of keyRows) {
+                if (
+                    methodId === key.key_id ||
+                    methodId.endsWith(`#${key.key_id}`) ||
+                    methodId.includes(key.key_id)
+                ) {
+                    return key.key_id
+                }
+            }
+        }
+
+        return null
+    } catch (error) {
+        logger.warn(
+            `Failed to resolve keyId from DID document: did=${didRow.did}, error=${error.message}`
         )
 
-        const result = {
-            walletId,
-            did,
-            alias,
-            migrated: response.rowCount === 1,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** migrateDidAlias end ***')
+        return null
     }
 }
 
-// テーブル単位の移行
-const migrateTable = async (table) => {
-    logger.debug('*** migrateTable start ***')
+// Account に関連する Wallet・DID・Key の取得
+const getWalletsByAccountId = async (accountId) => {
+    logger.debug('*** getWalletsByAccountId start ***')
 
     try {
-        const rows = await extractRows(table)
-        let migratedCount = 0
+        const wallets = await getWalletList(accountId)
 
-        for (const row of rows) {
-            switch (table) {
-                case 'accounts':
-                    await migrateAccount(row)
-                    break
+        if (wallets.length === 0) {
+            logger.debug('result : ', {
+                walletCount: 0,
+            })
 
-                case 'oidclogins':
-                    await migrateOidcLogin(row)
-                    break
-
-                case 'account_wallet_mapping':
-                    await migrateAccountWallet(row)
-                    break
-
-                case 'wallet_dids':
-                    await migrateDidAlias(row)
-                    break
-
-                default:
-                    throw new Error(
-                        `Unsupported table: ${table}`
-                    )
-            }
-
-            migratedCount++
+            return []
         }
 
-        const result = {
-            table,
-            sourceCount: rows.length,
-            migratedCount,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** migrateTable end ***')
-    }
-}
-
-// データ移行
-const migrate = async () => {
-    logger.debug('*** migrate start ***')
-
-    let transactionStarted = false
-
-    try {
-        await assertSourceTables()
-
-        await target.query('BEGIN')
-        transactionStarted = true
-
-        await createSchema()
-        await assertTargetSchema()
-
-        let total = 0
-        const tableCounts = {}
-
-        for (const table of MIGRATION_TABLES) {
-            const result = await migrateTable(table)
-
-            tableCounts[table] =
-                result.migratedCount
-
-            total +=
-                result.migratedCount
-
-            console.log(
-                `${table}: ${result.migratedCount} rows`
-            )
-        }
-
-        if (dryRun) {
-            await target.query('ROLLBACK')
-            transactionStarted = false
-
-            console.log(
-                `DRY RUN: ${total} rows processed. All changes rolled back.`
-            )
-        } else {
-            await target.query('COMMIT')
-            transactionStarted = false
-
-            console.log(
-                `Migration complete: ${total} rows migrated.`
-            )
-        }
-
-        const result = {
-            dryRun,
-            total,
-            tableCounts,
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        if (transactionStarted) {
-            try {
-                await target.query('ROLLBACK')
-            } catch (rollbackError) {
-                logError(rollbackError)
-            }
-        }
-
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** migrate end ***')
-    }
-}
-
-// 移行結果確認
-const verify = async () => {
-    logger.debug('*** verify start ***')
-
-    try {
-        await assertSourceTables()
-        await assertTargetSchema()
-
-        let failed = false
-
-        const checks = [
-            {
-                sourceTable: 'accounts',
-                targetTable: 'accounts',
-            },
-            {
-                sourceTable: 'account_wallet_mapping',
-                targetTable: 'account_wallets',
-            },
-            {
-                sourceTable: 'oidclogins',
-                targetTable: 'account_oidc_logins',
-            },
-            {
-                sourceTable: 'wallet_dids',
-                targetTable: 'did_aliases',
-            },
-        ]
-
-        for (const check of checks) {
-            const sourceResponse = await source.query(
-                `
-                SELECT COUNT(*)::int AS count
-                FROM ${qs}.${quoteId(check.sourceTable)}
-                `
-            )
-
-            const targetResponse = await target.query(
-                `
-                SELECT COUNT(*)::int AS count
-                FROM ${qt}.${quoteId(check.targetTable)}
-                `
-            )
-
-            const sourceCount =
-                sourceResponse.rows[0].count
-
-            const targetCount =
-                targetResponse.rows[0].count
-
-            const ok =
-                sourceCount === targetCount
-
-            console.log(
-                `${ok ? 'OK' : 'NG'} ${check.targetTable}: source=${sourceCount}, target=${targetCount}`
-            )
-
-            if (!ok) {
-                failed = true
-            }
-        }
-
-        // Wallet 名の確認
-        const walletNameResponse = await target.query(`
-            SELECT COUNT(*)::int AS count
-            FROM ${qt}.account_wallets
-            WHERE wallet_name IS NULL
-        `)
-
-        if (walletNameResponse.rows[0].count > 0) {
-            console.error(
-                `NG account_wallets: ${walletNameResponse.rows[0].count} wallet_name is NULL`
-            )
-
-            failed = true
-        }
-
-        // Account 関連整合性の確認
-        const accountWalletResponse = await target.query(`
-            SELECT COUNT(*)::int AS count
-            FROM ${qt}.account_wallets aw
-            LEFT JOIN ${qt}.accounts a
-              ON a.account_id = aw.account_id
-            WHERE a.account_id IS NULL
-        `)
-
-        if (accountWalletResponse.rows[0].count > 0) {
-            console.error(
-                `NG account_wallets: ${accountWalletResponse.rows[0].count} references to missing accounts`
-            )
-
-            failed = true
-        }
-
-        const oidcResponse = await target.query(`
-            SELECT COUNT(*)::int AS count
-            FROM ${qt}.account_oidc_logins o
-            LEFT JOIN ${qt}.accounts a
-              ON a.account_id = o.account_id
-            WHERE a.account_id IS NULL
-        `)
-
-        if (oidcResponse.rows[0].count > 0) {
-            console.error(
-                `NG account_oidc_logins: ${oidcResponse.rows[0].count} references to missing accounts`
-            )
-
-            failed = true
-        }
-
-        if (failed) {
-            throw new Error(
-                'Migration verification failed'
-            )
-        }
-
-        console.log(
-            'Migration verification: SUCCESS'
+        const walletIds = wallets.map(
+            (wallet) => wallet.wallet_id
         )
 
-        const result = {
-            verified: true,
+        const [
+            accountWallets,
+            dids,
+            keys,
+            aliases,
+        ] = await Promise.all([
+            getAccountWallets(accountId),
+            getWalletDids(walletIds),
+            getWalletKeys(walletIds),
+            getDidAliases(walletIds),
+        ])
+
+        const accountWalletMap = new Map(
+            accountWallets.map((row) => [
+                row.wallet_id,
+                row,
+            ])
+        )
+
+        const aliasMap = new Map(
+            aliases.map((row) => [
+                `${row.wallet_id}:${row.did}`,
+                row.alias,
+            ])
+        )
+
+        const didMap = new Map()
+
+        for (const row of dids) {
+            if (!didMap.has(row.wallet_id)) {
+                didMap.set(row.wallet_id, [])
+            }
+
+            didMap.get(row.wallet_id).push(row)
         }
 
-        logger.debug('result : ', result)
+        const keyMap = new Map()
 
-        return result
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** verify end ***')
-    }
-}
+        for (const row of keys) {
+            if (!keyMap.has(row.wallet_id)) {
+                keyMap.set(row.wallet_id, [])
+            }
 
-// DB 接続終了
-const close = async () => {
-    logger.debug('*** close start ***')
+            keyMap.get(row.wallet_id).push(row)
+        }
 
-    try {
-        await source.end()
-        await target.end()
-    } catch (error) {
-        logError(error)
-        throw error
-    } finally {
-        logger.debug('*** close end ***')
-    }
-}
+        const result = wallets.map((wallet) => {
+            const accountWallet =
+                accountWalletMap.get(wallet.wallet_id)
 
-// Main
-const main = async () => {
-    logger.debug('*** main start ***')
+            const walletDids =
+                didMap.get(wallet.wallet_id) || []
 
-    try {
-        await source.connect()
-        await target.connect()
+            const walletKeys =
+                keyMap.get(wallet.wallet_id) || []
 
-        switch (command) {
-            case 'init':
-                await createSchema()
-                await assertTargetSchema()
-                break
+            const resolvedDids = walletDids.map((didRow) => {
+                const alias =
+                    aliasMap.get(
+                        `${wallet.wallet_id}:${didRow.did}`
+                    ) ?? null
 
-            case 'migrate':
-                await migrate()
-                break
-
-            case 'verify':
-                await verify()
-                break
-
-            default:
-                throw new Error(
-                    'Usage: node src/migrate.js init | migrate [--dry-run] | verify'
+                const keyId = resolveDidKeyId(
+                    didRow,
+                    walletKeys,
+                    wallet.default_did_id,
+                    wallet.default_key_id
                 )
-        }
+
+                return {
+                    did: didRow.did,
+                    alias,
+                    keyId,
+                }
+            })
+
+            return {
+                walletId: wallet.wallet_id,
+                walletName: accountWallet?.wallet_name ?? null,
+                defaultDid: wallet.default_did_id ?? null,
+                defaultKeyId: wallet.default_key_id ?? null,
+                addedOn: accountWallet?.added_on ?? null,
+                dids: resolvedDids,
+            }
+        })
+
+        logger.debug('result : ', {
+            walletCount: result.length,
+        })
+
+        return result
     } catch (error) {
-        logError(error)
-        process.exitCode = 1
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
     } finally {
-        await close()
-        logger.debug('*** main end ***')
+        logger.debug('*** getWalletsByAccountId end ***')
     }
 }
 
-main()
+module.exports = {
+    setLogger,
+    getAccountById,
+    getAccountByEmail,
+    getAccountByOidcId,
+    getWalletsByAccountId,
+}
