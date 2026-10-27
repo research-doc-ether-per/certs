@@ -1,56 +1,21 @@
-
-/**
- * 発行可能なCredential一覧とMetadata情報を取得する。
- */
-const getIssuableCredentials = async (accessToken = null) => {
-    logger.debug('*** getIssuableCredentials start ***')
-
-    try {
-        // Profile一覧とIssuer Metadataを取得する。
-        const [profilesResponse, metadata] = await Promise.all([
-            getCredentialProfiles(accessToken),
-            getCredentialIssuerMetadata(accessToken)
-        ])
-
-        // Profile一覧を配列に変換する。
-        const profiles = Array.isArray(profilesResponse)
-            ? profilesResponse
-            : Object.entries(profilesResponse).map(
-                ([profileId, profile]) => ({
-                    ...profile,
-                    profileId
-                })
-            )
-
-        const configurations =
-            metadata.credential_configurations_supported || {}
-
-        // credentialConfigurationIdをキーとして情報を統合する。
-        const result = Object.fromEntries(
-            profiles.map(profile => {
-                const configurationId = profile.credentialConfigurationId
-                const configuration = configurations[configurationId] || {}
-
-                return [
-                    configurationId,
-                    {
-                        ...configuration,
-                        profileId: profile.profileId,
-                        name: profile.name,
-                        credentialData: profile.credentialData || {},
-                        selectiveDisclosure: profile.selectiveDisclosure || null,
-                        mapping: profile.mapping || null
-                    }
-                ]
-            })
-        )
-
-        return result
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** getIssuableCredentials end ***')
-    }
-}
+プロパティ,子プロパティ,詳細プロパティ,説明,型,必須
+[credential_configuration_id],,,walt.id Issuer側で定義された発行可能な証明書のConfiguration ID。IDごとに証明書情報が格納される。,object,○
+format,,,証明書のフォーマット種別。例：jwt_vc_json、dc+sd-jwt,string,○
+scope,,,証明書発行要求時に使用するOAuth 2.0のスコープ。,string,△
+credential_definition,,,証明書の定義情報。証明書タイプなどを指定する。,object,△
+,type,,証明書のタイプ一覧。,Array<string>,△
+credential_signing_alg_values_supported,,,証明書の署名に使用可能なアルゴリズムの一覧。,Array<string>,△
+cryptographic_binding_methods_supported,,,証明書とHolderの暗号鍵を紐付けるためにサポートされるバインディング方式の一覧。,Array<string>,△
+proof_types_supported,,,証明書発行要求時にサポートされるProofの種類と設定情報。,object,△
+,jwt,,JWT形式のProofに関する設定情報。,object,△
+,,proof_signing_alg_values_supported,JWT Proofの署名に使用可能なアルゴリズムの一覧。,Array<string>,△
+credential_metadata,,,証明書の表示情報やクレーム定義などのメタデータ。,object,△
+,display,,証明書の表示名・説明・言語などの表示情報の一覧。,Array<object>,△
+,claims,,証明書に含まれるクレームの定義情報の一覧。,Array<object>,△
+vct,,,SD-JWT VCのCredential Typeを示す識別子。,string,△
+doctype,,,mdoc形式の証明書タイプを示す識別子。,string,△
+profileId,,,証明書発行時に使用するCredential ProfileのID。,string,○
+name,,,Credential Profileの名称。,string,○
+credentialData,,,証明書発行時に使用するCredentialデータのテンプレート。,object,○
+selectiveDisclosure,,,SD-JWT VC発行時の選択的開示に関する設定情報。,object / null,△
+mapping,,,証明書発行時に適用する動的データのマッピング設定。,object / null,△
