@@ -33,17 +33,17 @@ const validateCredentialOffer = async (offer, accessToken = null) => {
     logger.debug('*** validateCredentialOffer start ***')
 
     try {
-        const { offerId, expiresAt } = offer
+        const { offerId, expiresAt } = offer || {}
 
         if (!offerId) {
             throw new Error('Offer ID is required.')
         }
 
-        // 有効期限を確認
+        // Offerの有効期限を確認する。
         if (expiresAt != null) {
             const expirationTime = Number(expiresAt)
 
-            if (!Number.isFinite(expirationTime)) {
+            if (!Number.isSafeInteger(expirationTime)) {
                 throw new Error('Invalid Offer expiration time.')
             }
 
@@ -52,7 +52,7 @@ const validateCredentialOffer = async (offer, accessToken = null) => {
             }
         }
 
-        // Issuance Sessionを取得
+        // Issuance Sessionを取得する。
         const session = await getIssuanceSession(
             offerId,
             accessToken
@@ -64,6 +64,9 @@ const validateCredentialOffer = async (offer, accessToken = null) => {
 
             case 'UNSUCCESSFUL':
                 throw new Error('Credential issuance has failed.')
+
+            case 'REJECTED_BY_USER':
+                throw new Error('Credential issuance was rejected by the user.')
 
             case 'EXPIRED':
                 throw new Error('Offer URL has expired.')
