@@ -1,40 +1,26 @@
-/**
- * Presentation Requestの有効期限を確認する。
- */
-const validatePresentationRequest = async (sessionId, accessToken = null) => {
-    logger.debug('*** validatePresentationRequest start ***')
+// ログイン関連データ確認
 
-    try {
-        if (!sessionId) {
-            throw new Error('Session ID is required.')
-        }
+// テスト方式を指定する（email / oidc）
 
-        let session
+// OIDC 確認用の Access Token を設定する
 
-        try {
-            session = await getVerificationSession(sessionId, accessToken)
-        } catch (error) {
-            const status = error.response?.status
+// OIDC ユーザ ID（Access Token の sub）
 
-            if (status === 404) {
-                throw new Error('Verification Session not found or expired.')
-            }
-
-            throw error
-        }
-
-        // Sessionが取得できた場合
-        if (session.status === 'EXPIRED') {
-            throw new Error('Presentation URL has expired.')
-        }
-
-        return session
-
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** validatePresentationRequest end ***')
-    }
+if (!accessToken || !userId) {
+    throw new Error('Access Token or User ID is missing')
 }
+
+// FIXME: 実行前に以下を確認し、必要に応じて設定してください。
+// ==================================================> FIXME: START
+// テスト方式を指定する（email / oidc）
+const TEST_TYPE = 'email'
+// const TEST_TYPE = 'oidc'
+
+// Email 確認用
+const EMAIL = '...'
+
+// OIDC 確認用
+// Access Token または User ID のどちらか一方を設定する
+const OIDC_ACCESS_TOKEN = ''
+const OIDC_USER_ID = ''
+// ==================================================> FIXME: END
