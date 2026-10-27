@@ -19,3 +19,30 @@ name,,,Credential Profileの名称。,string,○
 credentialData,,,証明書発行時に使用するCredentialデータのテンプレート。,object,○
 selectiveDisclosure,,,SD-JWT VC発行時の選択的開示に関する設定情報。,object / null,△
 mapping,,,証明書発行時に適用する動的データのマッピング設定。,object / null,△
+
+
+
+  walt.id Issuer APIから発行可能な証明書のProfile一覧およびMetadata情報を取得し、統合した証明書情報を返却する。
+
+① Credential Profile一覧を取得する。
+
+エンドポイント：/issuer2/profiles  
+メソッド：GET  
+クエリパラメータ：なし
+
+② Credential Issuer Metadataを取得する。
+
+エンドポイント：/.well-known/openid-credential-issuer/openid4vci  
+メソッド：GET  
+クエリパラメータ：なし
+
+③ 取得したCredential Profile一覧とCredential Issuer Metadataを統合する。
+
+- Credential Profileの「credentialConfigurationId」をキーとして、Metadataの「credential_configurations_supported」から対応する証明書情報を取得する。
+- Metadataの証明書情報に、Profileの「profileId」「name」「credentialData」「selectiveDisclosure」「mapping」を追加する。
+- Metadataに対応する証明書情報が存在しない場合は、空のオブジェクトとして扱う。
+- 「credentialConfigurationId」をキーとしたオブジェクトに統合する。
+
+④ 統合した証明書情報を成功レスポンスとして返却する。
+
+※処理中にエラーが発生した場合、InternalServerErrorを返却する。
