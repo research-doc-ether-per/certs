@@ -1,13 +1,14 @@
+
 /**
- * Issuance Sessionを取得する。
+ * Verification Sessionを取得する。
  */
-const getIssuanceSession = async (offerId, accessToken = null) => {
-    logger.debug('*** getIssuanceSession start ***')
+const getVerificationSession = async (sessionId, accessToken = null) => {
+    logger.debug('*** getVerificationSession start ***')
 
     try {
         const response = await fetchService.handleGet(
-            fetchService.issuerApi2,
-            `/issuer2/sessions/${encodeURIComponent(offerId)}`,
+            fetchService.verifierApi2,
+            `/verification-session/${encodeURIComponent(sessionId)}/info`,
             accessToken
         )
 
@@ -21,67 +22,57 @@ const getIssuanceSession = async (offerId, accessToken = null) => {
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** getIssuanceSession end ***')
+        logger.debug('*** getVerificationSession end ***')
     }
 }
 
 
+
+
 /**
- * Credential Offerの有効性を確認する。
+ * Presentation Requestの有効期限を確認する。
  */
-const validateCredentialOffer = async (offer, accessToken = null) => {
-    logger.debug('*** validateCredentialOffer start ***')
+const validatePresentationRequest = async (sessionId, accessToken = null) => {
+    logger.debug('*** validatePresentationRequest start ***')
 
     try {
-        const { offerId, expiresAt } = offer || {}
-
-        if (!offerId) {
-            throw new Error('Offer ID is required.')
+        if (!sessionId) {
+            throw new Error('Session ID is required.')
         }
 
-        // Offerの有効期限を確認する。
-        if (expiresAt != null) {
-            const expirationTime = Number(expiresAt)
-
-            if (!Number.isSafeInteger(expirationTime)) {
-                throw new Error('Invalid Offer expiration time.')
-            }
-
-            if (Date.now() >= expirationTime) {
-                throw new Error('Offer URL has expired.')
-            }
-        }
-
-        // Issuance Sessionを取得する。
-        const session = await getIssuanceSession(
-            offerId,
+        // Verification Sessionを取得する。
+        const session = await getVerificationSession(
+            sessionId,
             accessToken
         )
 
-        switch (session.status) {
-            case 'SUCCESSFUL':
-                throw new Error('Credential has already been issued.')
-
-            case 'UNSUCCESSFUL':
-                throw new Error('Credential issuance has failed.')
-
-            case 'REJECTED_BY_USER':
-                throw new Error('Credential issuance was rejected by the user.')
-
-            case 'EXPIRED':
-                throw new Error('Offer URL has expired.')
-
-            case 'ACTIVE':
-                return
-
-            default:
-                throw new Error('Unknown issuance session status.')
+        // Sessionの有効期限切れを確認する。
+        if (session.status === 'EXPIRED') {
+            throw new Error('Presentation URL has expired.')
         }
+
+        // 未使用のSessionのみ有効期限を確認する。
+        if (['ACTIVE', 'UNUSED', 'IN_USE'].includes(session.status)) {
+            if (!session.expirationDate) {
+                throw new Error('Presentation expiration time is missing.')
+            }
+
+            const expirationTime = Date.parse(session.expirationDate)
+
+            if (!Number.isFinite(expirationTime)) {
+                throw new Error('Invalid Presentation expiration time.')
+            }
+
+            if (Date.now() >= expirationTime) {
+                throw new Error('Presentation URL has expired.')
+            }
+        }
+
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** validateCredentialOffer end ***')
+        logger.debug('*** validatePresentationRequest end ***')
     }
 }
