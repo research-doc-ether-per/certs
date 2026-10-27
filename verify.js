@@ -1,3 +1,99 @@
+
+/**
+ * 発行可能なCredential一覧とMetadata情報を取得する。
+ */
+const getIssuableCredentials = async (accessToken = null) => {
+    logger.debug('*** getIssuableCredentials start ***')
+
+    try {
+        // Profile一覧とIssuer Metadataを取得する。
+        const [profilesResponse, metadata] = await Promise.all([
+            getCredentialProfiles(accessToken),
+            getCredentialIssuerMetadata(accessToken)
+        ])
+
+        // Profile一覧を配列に変換する。
+        const profiles = Array.isArray(profilesResponse)
+            ? profilesResponse
+            : Object.entries(profilesResponse).map(
+                ([profileId, profile]) => ({
+                    ...profile,
+                    profileId
+                })
+            )
+
+        const configurations =
+            metadata.credential_configurations_supported || {}
+
+        // credentialConfigurationIdをキーとして情報を統合する。
+        const result = Object.fromEntries(
+            profiles.map(profile => {
+                const configurationId = profile.credentialConfigurationId
+                const configuration = configurations[configurationId] || {}
+
+                const {
+                    format,
+                    credential_definition,
+                    vct,
+                    credential_signing_alg_values_supported,
+                    cryptographic_binding_methods_supported,
+                    proof_types_supported,
+                    credential_metadata
+                } = configuration
+
+                return [
+                    configurationId,
+                    {
+                        format: format || null,
+                        ...(credential_definition && {
+                            credential_definition: {
+                                type: credential_definition.type || []
+                            }
+                        }),
+                        ...(vct && { vct }),
+                        credential_signing_alg_values_supported:
+                            credential_signing_alg_values_supported || [],
+                        cryptographic_binding_methods_supported:
+                            cryptographic_binding_methods_supported || [],
+                        ...(proof_types_supported && {
+                            proof_types_supported: {
+                                ...(proof_types_supported.jwt && {
+                                    jwt: {
+                                        proof_signing_alg_values_supported:
+                                            proof_types_supported.jwt
+                                                .proof_signing_alg_values_supported || []
+                                    }
+                                })
+                            }
+                        }),
+                        ...(credential_metadata && {
+                            credential_metadata: {
+                                claims: credential_metadata.claims || [],
+                                display: credential_metadata.display || []
+                            }
+                        }),
+                        profileId: profile.profileId,
+                        name: profile.name,
+                        credentialData: profile.credentialData || {},
+                        selectiveDisclosure: profile.selectiveDisclosure || null,
+                        mapping: profile.mapping || null
+                    }
+                ]
+            })
+        )
+
+        return result
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getIssuableCredentials end ***')
+    }
+}
+
+
+
 プロパティ,子プロパティ,詳細プロパティ,説明,型,必須
 [credential_configuration_id],,,発行可能証明書ID。walt.id Issuer側で定義された「credential_configuration_id」ごとの証明書情報が指定される。,object,○
 format,,,証明書のフォーマット種別が指定される。例：jwt_vc_json、dc+sd-jwt,string,○
