@@ -13,7 +13,7 @@ const getIssuableCredentials = async (accessToken = null) => {
             metadata.credential_configurations_supported || {}
 
         // credentialConfigurationIdをキーとしてMetadata情報を取得する。
-        const result = Object.fromEntries(
+        const credentials = Object.fromEntries(
             Object.entries(configurations).map(
                 ([configurationId, configuration]) => {
                     const {
@@ -63,7 +63,13 @@ const getIssuableCredentials = async (accessToken = null) => {
             )
         )
 
-        return result
+        return {
+            issuer: {
+                id: metadata.credential_issuer || null,
+                display: metadata.display || []
+            },
+            credentials
+        }
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
