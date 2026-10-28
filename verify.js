@@ -1,3 +1,32 @@
+# DB削除
+docker exec -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d postgres \
+  -c "DROP DATABASE IF EXISTS wallet WITH (FORCE);"
+
+# DB作成
+docker exec -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d postgres \
+  -c "CREATE DATABASE wallet OWNER wallet;"
+
+# スキーマ復元
+docker exec -i -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
+  < wcloudwallet_schema.sql
+
+# データ復元
+docker exec -i -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
+  < cloudwallet_data.sql
+
+# PostgreSQL接続
+docker exec -it -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d wallet
+
+# テーブル一覧確認（psql内で実行）
+\dt
+
+# データ件数確認（psql内で実行）
+SELECT COUNT(*) FROM credential_formats;
 
 /**
  * Credential Dataと証明書フォーマット定義を統合する。
