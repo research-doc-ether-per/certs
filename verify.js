@@ -1,51 +1,74 @@
 
 /**
- * Credential Configuration IDからCredential Profileを取得する。
+ * 発行可能なCredential一覧とMetadata情報を取得する。
  */
-const getCredentialProfileByConfigurationId = async (
-    credentialConfigurationId,
-    accessToken = null
-) => {
-    logger.debug('*** getCredentialProfileByConfigurationId start ***')
+const getIssuableCredentials = async (accessToken = null) => {
+    logger.debug('*** getIssuableCredentials start ***')
 
     try {
-        if (!credentialConfigurationId) {
-            throw new Error('Credential Configuration ID is required.')
-        }
+        // Issuer Metadataを取得する。
+        const metadata = await getCredentialIssuerMetadata(accessToken)
 
-        // Credential Profile一覧を取得する。
-        const profilesResponse = await getCredentialProfiles(accessToken)
+        const configurations =
+            metadata.credential_configurations_supported || {}
 
-        // Profile一覧を配列に変換する。
-        const profiles = Array.isArray(profilesResponse)
-            ? profilesResponse
-            : Object.entries(profilesResponse).map(
-                ([profileId, profile]) => ({
-                    ...profile,
-                    profileId
-                })
+        // credentialConfigurationIdをキーとしてMetadata情報を取得する。
+        const result = Object.fromEntries(
+            Object.entries(configurations).map(
+                ([configurationId, configuration]) => {
+                    const {
+                        format,
+                        credential_definition,
+                        vct,
+                        credential_signing_alg_values_supported,
+                        cryptographic_binding_methods_supported,
+                        proof_types_supported,
+                        credential_metadata
+                    } = configuration
+
+                    return [
+                        configurationId,
+                        {
+                            format: format || null,
+                            ...(credential_definition && {
+                                credential_definition: {
+                                    type: credential_definition.type || []
+                                }
+                            }),
+                            ...(vct && { vct }),
+                            credential_signing_alg_values_supported:
+                                credential_signing_alg_values_supported || [],
+                            cryptographic_binding_methods_supported:
+                                cryptographic_binding_methods_supported || [],
+                            ...(proof_types_supported && {
+                                proof_types_supported: {
+                                    ...(proof_types_supported.jwt && {
+                                        jwt: {
+                                            proof_signing_alg_values_supported:
+                                                proof_types_supported.jwt
+                                                    .proof_signing_alg_values_supported || []
+                                        }
+                                    })
+                                }
+                            }),
+                            ...(credential_metadata && {
+                                credential_metadata: {
+                                    claims: credential_metadata.claims || [],
+                                    display: credential_metadata.display || []
+                                }
+                            })
+                        }
+                    ]
+                }
             )
-
-        // Credential Configuration IDで検索する。
-        const matchedProfiles = profiles.filter(
-            profile =>
-                profile.credentialConfigurationId === credentialConfigurationId
         )
 
-        if (matchedProfiles.length === 0) {
-            throw new Error('Credential Profile not found.')
-        }
-
-        if (matchedProfiles.length > 1) {
-            throw new Error('Multiple Credential Profiles found.')
-        }
-
-        return matchedProfiles[0]
+        return result
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** getCredentialProfileByConfigurationId end ***')
+        logger.debug('*** getIssuableCredentials end ***')
     }
 }
