@@ -53,6 +53,49 @@ docker exec -it -e PGPASSWORD=wallet wallet-db \
 # データ件数確認（psql内で実行）
 SELECT COUNT(*) FROM credential_formats;
 
+
+const ALL_SETTING = 'all'
+
+// 認可方式（Cloud Wallet）
+const AUTH_METHOD_TYPES = {
+    PRE_AUTHORIZED: 'PRE_AUTHORIZED',
+    PWD: 'PWD'
+}
+
+// 認可方式（小文字）
+const AUTH_METHOD_LOWER_TYPES = {
+    PRE_AUTHORIZED: 'pre_authorize',
+    PWD: 'pwd'
+}
+
+// 証明書フォーマット（Cloud Wallet）
+const FORMAT_TYPES = {
+    VC_SD_JWT: 'vc+sd-jwt',
+    VC_JWT: 'jwt_vc_json'
+}
+
+// 認可方式（walt.id v1.0.0）
+const WALTID_AUTH_METHOD_TYPES = {
+    PRE_AUTHORIZED: 'PRE_AUTHORIZED',
+    AUTHORIZATION_CODE: 'AUTHORIZED'
+}
+
+// 証明書フォーマット（walt.id v1.0.0）
+const WALTID_FORMAT_TYPES = {
+    JWT_VC_JSON: 'jwt_vc_json',
+    SD_JWT_VC: 'dc+sd-jwt'
+}
+
+module.exports = {
+    ALL_SETTING,
+    AUTH_METHOD_TYPES,
+    AUTH_METHOD_LOWER_TYPES,
+    FORMAT_TYPES,
+    WALTID_AUTH_METHOD_TYPES,
+    WALTID_FORMAT_TYPES
+}
+
+
 /**
  * Credential Dataと証明書フォーマット定義を統合する。
  *
