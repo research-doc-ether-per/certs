@@ -1,233 +1,403 @@
 
-[
-    {
-        "groupId": "all",
-        "type": "Awards",
-        "fields": {
-            "credentialSubject": {
-                "certExplanation": {
-                    "type": "text",
-                    "required": false,
-                    "showInDetail": true,
-                    "showInIssue": true,
-                    "length": {
-                        "min": 0,
-                        "max": 100
-                    }
-                },
-                "organization": {
-                    "type": "text",
-                    "required": true,
-                    "showInDetail": true,
-                    "showInIssue": true,
-                    "length": {
-                        "min": 1,
-                        "max": 100
-                    }
-                },
-                "issuedAt": {
-                    "type": "datetime",
-                    "required": true,
-                    "showInDetail": true,
-                    "showInIssue": true,
-                    "format": "YYYY/MM/DD"
+/**
+ * Credential Dataのデフォルト値の有無を確認する。
+ */
+const hasCredentialDefaultValue = (value) => {
+    if (value === null || value === undefined) {
+        return false
+    }
+
+    if (typeof value === 'string') {
+        const str = value.trim()
+
+        return str !== '' &&
+            str !== 'string' &&
+            str !== 'null' &&
+            str !== 'THIS WILL BE REPLACED WITH DYNAMIC DATA FUNCTION'
+    }
+
+    return true
+}
+
+/**
+ * Credential Dataの値からフィールドタイプを取得する。
+ */
+const getFieldType = (value) => {
+    if (typeof value === 'number') {
+        return 'number'
+    }
+
+    if (typeof value === 'boolean') {
+        return 'boolean'
+    }
+
+    if (Array.isArray(value)) {
+        return 'array'
+    }
+
+    if (value !== null && typeof value === 'object') {
+        return 'object'
+    }
+
+    return 'text'
+}
+
+/**
+ * オブジェクトかどうかを確認する。
+ */
+const isPlainObject = (value) => {
+    return value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+}
+
+/**
+ * システム項目かどうかを確認する。
+ */
+const isSystemField = (path) => {
+    if (path.length === 1) {
+        return CREDENTIAL_SYSTEM_FIELDS.includes(path[0])
+    }
+
+    return path.length === 2 &&
+        path[0] === 'credentialSubject' &&
+        path[1] === 'id'
+}
+
+/**
+ * DBのフィールド定義かどうかを確認する。
+ */
+const isFieldDefinition = (value) => {
+    if (!isPlainObject(value)) {
+        return false
+    }
+
+    return [
+        'type',
+        'required',
+        'length',
+        'format',
+        'issueFormat',
+        'showInDetail',
+        'showInIssue',
+        'isDisclosure'
+    ].some(key => Object.hasOwn(value, key))
+}
+
+/**
+ * Credential Issuer MetadataからClaim情報を取得する。
+ */
+const getClaimMetadata = (claims, path, format) => {
+    if (!Array.isArray(claims)) {
+        return null
+    }
+
+    const paths = [path]
+
+    // SD-JWT VCのClaimパスを考慮する。
+    if (
+        format === WALTID_FORMAT_TYPES.SD_JWT_VC &&
+        path[0] === 'credentialSubject'
+    ) {
+        paths.push(path.slice(1))
+    }
+
+    return claims.find(claim => {
+        if (!Array.isArray(claim.path)) {
+            return false
+        }
+
+        return paths.some(candidate =>
+            candidate.length === claim.path.length &&
+            candidate.every((key, index) =>
+                key === claim.path[index]
+            )
+        )
+    }) || null
+}
+
+/**
+ * Selective Disclosureの設定を取得する。
+ */
+const getDisclosureValue = (selectiveDisclosure, path) => {
+    let current = selectiveDisclosure?.fields || {}
+
+    for (const key of path) {
+        current = current?.[key] ||
+            current?.children?.fields?.[key]
+
+        if (!current) {
+            return false
+        }
+    }
+
+    return current?.sd === true
+}
+
+/**
+ * Credential Data、DB定義、Metadataを統合する。
+ */
+const mergeCredentialFields = (
+    credentialData = {},
+    selectiveDisclosure = null,
+    formatFields = {},
+    claims = [],
+    format = null
+) => {
+    logger.debug('*** mergeCredentialFields start ***')
+
+    try {
+        /**
+         * フィールド定義を再帰的に生成する。
+         */
+        const mergeFields = (data, db, path = []) => {
+            const result = {}
+
+            const profileData = isPlainObject(data)
+                ? data
+                : {}
+
+            const dbData = isPlainObject(db)
+                ? db
+                : {}
+
+            // ProfileとDBの項目を統合する。
+            const keys = new Set([
+                ...Object.keys(profileData),
+                ...Object.keys(dbData)
+            ])
+
+            for (const key of keys) {
+                const currentPath = [...path, key]
+
+                // システム項目を除外する。
+                if (isSystemField(currentPath)) {
+                    continue
                 }
-            },
-            "issuanceDate": {
-                "type": "datetime",
-                "required": false,
-                "showInDetail": true,
-                "showInIssue": true,
-                "issueFormat": "YYYY/MM/DD",
-                "format": "YYYY/MM/DD HH:mm:ss"
-            },
-            "expirationDate": {
-                "type": "datetime",
-                "required": false,
-                "showInDetail": true,
-                "showInIssue": true,
-                "issueFormat": "YYYY/MM/DD",
-                "format": "YYYY/MM/DD HH:mm:ss"
+
+                const hasProfileValue =
+                    Object.hasOwn(profileData, key)
+
+                const value = profileData[key]
+                const dbValue = dbData[key]
+
+                // ネストされた項目を再帰的に処理する。
+                if (
+                    !isFieldDefinition(dbValue) &&
+                    (
+                        (
+                            isPlainObject(value) &&
+                            !isFieldDefinition(value)
+                        ) ||
+                        (
+                            !hasProfileValue &&
+                            isPlainObject(dbValue)
+                        )
+                    )
+                ) {
+                    result[key] = mergeFields(
+                        value,
+                        dbValue,
+                        currentPath
+                    )
+                    continue
+                }
+
+                const dbDefinition = isFieldDefinition(dbValue)
+                    ? dbValue
+                    : {}
+
+                // Metadataから表示情報を取得する。
+                const claim = getClaimMetadata(
+                    claims,
+                    currentPath,
+                    format
+                )
+
+                // フィールドの基本情報を生成する。
+                const field = {
+                    type: getFieldType(value),
+                    required: false,
+                    hasDefaultValue: hasProfileValue &&
+                        hasCredentialDefaultValue(value),
+                    showInDetail: true,
+                    showInIssue: true
+                }
+
+                // Metadataの表示情報を設定する。
+                if (Array.isArray(claim?.display)) {
+                    field.display = claim.display
+                }
+
+                // 開示対象の場合のみ設定する。
+                if (
+                    getDisclosureValue(
+                        selectiveDisclosure,
+                        currentPath
+                    )
+                ) {
+                    field.isDisclosure = true
+                }
+
+                // DBの定義を優先して統合する。
+                const mergedField = {
+                    ...field,
+                    ...dbDefinition
+                }
+
+                // 開示対象以外はisDisclosureを返却しない。
+                if (mergedField.isDisclosure !== true) {
+                    delete mergedField.isDisclosure
+                }
+
+                result[key] = mergedField
             }
-        },
-        "formats": [
-            {
-                "format": "jwt_vc_json",
-                "authType": "pre_authorized",
-                "disclosurePaths": []
-            },
-            {
-                "format": "vc+sd-jwt",
-                "authType": "pwd",
-                "disclosurePaths": [
-                    "credentialSubject.organization",
-                    "credentialSubject.issuedAt"
-                ]
-            }
-        ]
-    },
-    {
-        "groupId": "all",
-        "type": "Career",
-        "fields": {},
-        "formats": [
-            {
-                "format": "jwt_vc_json",
-                "authType": "pre_authorized",
-                "disclosurePaths": []
-            },
-            {
-                "format": "vc+sd-jwt",
-                "authType": "pwd",
-                "disclosurePaths": []
-            }
-        ]
-    },
-    {
-        "groupId": "all",
-        "type": "Qualifications",
-        "fields": {},
-        "formats": [
-            {
-                "format": "jwt_vc_json",
-                "authType": "pre_authorized",
-                "disclosurePaths": []
-            },
-            {
-                "format": "vc+sd-jwt",
-                "authType": "pwd",
-                "disclosurePaths": []
-            }
-        ]
+
+            return result
+        }
+
+        return mergeFields(
+            credentialData,
+            formatFields
+        )
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** mergeCredentialFields end ***')
     }
-]
-
-
-
-
-const fs = require('fs')
-const path = require('path')
-
-const configPath = path.join(
-    __dirname,
-    'credential-formats.config.json'
-)
-
-const outputPath = path.join(
-    __dirname,
-    'credential_formats_init.sql'
-)
-
-/**
- * SQL文字列をエスケープする。
- */
-const escapeSql = (value) => {
-    return String(value).replace(/'/g, "''")
 }
 
 /**
- * フィールド定義を生成する。
+ * 証明書フォーマット定義取得サービス
+ * @param {object} params パラメータ
+ * @returns {Promise<object>}
  */
-const createFields = (definition, disclosurePaths = []) => {
-    const fields = structuredClone(definition)
+const getCredentialFormat = async (params) => {
+    logger.debug('*** getCredentialFormat start ***')
+    logger.debug('params: ', JSON.stringify(params, null, 2))
 
-    // 開示対象の項目のみisDisclosureを設定する。
-    for (const fieldPath of disclosurePaths) {
-        const keys = fieldPath.split('.')
-        let current = fields
+    try {
+        const { groupId, type, format } = params
 
-        for (const key of keys) {
-            current = current?.[key]
-        }
+        let rows = []
 
-        if (!current || typeof current !== 'object') {
-            throw new Error(
-                `Disclosure field not found: ${fieldPath}`
+        // 指定されたグループIDで検索する。
+        if (
+            groupId &&
+            groupId.trim() &&
+            groupId.trim() !== ALL_SETTING
+        ) {
+            rows = await walletDBService.select(
+                'credential_formats',
+                {
+                    group_id: groupId.trim(),
+                    type,
+                    format
+                }
             )
         }
 
-        current.isDisclosure = true
-    }
-
-    return { fields }
-}
-
-/**
- * INSERT文を生成する。
- */
-const createInsertSql = (credential, formatConfig) => {
-    const fields = createFields(
-        credential.fields,
-        formatConfig.disclosurePaths || []
-    )
-
-    const values = [
-        credential.groupId || 'all',
-        credential.type,
-        formatConfig.format,
-        formatConfig.authType
-    ].map(value => `'${escapeSql(value)}'`)
-
-    const fieldsJson = escapeSql(
-        JSON.stringify(fields, null, 4)
-    )
-
-    return `-- ${credential.type} (${formatConfig.format})
-INSERT INTO credential_formats (
-    group_id,
-    type,
-    format,
-    auth_type,
-    fields
-) VALUES (
-    ${values.join(',\n    ')},
-    '${fieldsJson}'::jsonb
-)
-ON CONFLICT (group_id, type, format)
-DO UPDATE SET
-    auth_type = EXCLUDED.auth_type,
-    fields = EXCLUDED.fields,
-    update_date = CURRENT_TIMESTAMP;`
-}
-
-/**
- * 証明書フォーマット定義の初期SQLを生成する。
- */
-const generateSql = () => {
-    const credentials = JSON.parse(
-        fs.readFileSync(configPath, 'utf8')
-    )
-
-    const statements = []
-
-    for (const credential of credentials) {
-        const fields = credential.fields || {}
-
-        if (Object.keys(fields).length === 0) {
-            console.warn(
-                `フィールド定義が未設定のためスキップ: ${credential.type}`
-            )
-            continue
-        }
-
-        for (const formatConfig of credential.formats || []) {
-            statements.push(
-                createInsertSql(credential, formatConfig)
+        // 該当データがない場合、allで検索する。
+        if (rows.length === 0) {
+            rows = await walletDBService.select(
+                'credential_formats',
+                {
+                    group_id: ALL_SETTING,
+                    type,
+                    format
+                }
             )
         }
+
+        // DBのフィールド定義を取得する。
+        const rawFields = rows?.[0]?.fields || {}
+
+        const formatJson = typeof rawFields === 'string'
+            ? JSON.parse(rawFields)
+            : rawFields
+
+        const dbFields = formatJson?.fields || {}
+
+        // 認証方式を取得する。
+        const authType =
+            rows?.[0]?.authType ??
+            rows?.[0]?.auth_type
+
+        const authTypes = createAuthMethodTypeList(authType)
+
+        let fields = dbFields
+        let image = images?.default || null
+
+        // 証明書種別とフォーマットが指定された場合
+        if (type && format) {
+            // Cloud WalletのFormatをwalt.id形式に変換する。
+            const waltidFormat =
+                format === FORMAT_TYPES.VC_SD_JWT
+                    ? WALTID_FORMAT_TYPES.SD_JWT_VC
+                    : format
+
+            // Credential Configuration IDを生成する。
+            const credentialConfigurationId =
+                `${type}_${waltidFormat}`
+
+            // Credential ProfileとIssuer Metadataを取得する。
+            const [profile, metadata] = await Promise.all([
+                getCredentialProfileByConfigurationId(
+                    credentialConfigurationId
+                ),
+                getCredentialIssuerMetadata()
+            ])
+
+            // Credential Configuration情報を取得する。
+            const configuration =
+                metadata?.credential_configurations_supported
+                    ?.[credentialConfigurationId]
+
+            if (!configuration) {
+                throw new Error(
+                    `Credential Configuration not found: ${credentialConfigurationId}`
+                )
+            }
+
+            // Credential Profile情報を取得する。
+            const credentialData =
+                profile.credentialData || {}
+
+            const selectiveDisclosure =
+                profile.selectiveDisclosure || null
+
+            // MetadataのClaims情報を取得する。
+            const claims =
+                configuration.credential_metadata?.claims || []
+
+            // Credential Data、DB定義、Metadataを統合する。
+            fields = mergeCredentialFields(
+                credentialData,
+                selectiveDisclosure,
+                dbFields,
+                claims,
+                waltidFormat
+            )
+
+            // Credential Dataの画像を取得する。
+            const credentialImage =
+                credentialData.credentialSubject?.image
+
+            image = credentialImage || images?.default || null
+        }
+
+        return {
+            fields,
+            image,
+            authTypes
+        }
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** getCredentialFormat end ***')
     }
-
-    const sql = [
-        '-- 証明書フォーマット定義 初期データ設定',
-        'BEGIN;',
-        ...statements,
-        'COMMIT;'
-    ].join('\n\n')
-
-    fs.writeFileSync(outputPath, sql + '\n', 'utf8')
-
-    console.log(`SQL生成完了: ${outputPath}`)
-    console.log(`生成件数: ${statements.length}`)
 }
-
-generateSql()
