@@ -1,190 +1,158 @@
-# DB削除
-docker exec -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d postgres \
-  -c "DROP DATABASE IF EXISTS wallet WITH (FORCE);"
 
-# DB作成
-docker exec -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d postgres \
-  -c "CREATE DATABASE wallet OWNER wallet;"
+/**
+ * Credential Dataのデフォルト値の有無を確認する。
+ */
+const hasCredentialDefaultValue = (value) => {
+    if (value === null || value === undefined) {
+        return false
+    }
 
-# スキーマ復元
-docker exec -i -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
-  < wcloudwallet_schema.sql
+    if (typeof value === 'string') {
+        const str = value.trim()
 
-# データ復元
-docker exec -i -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
-  < cloudwallet_data.sql
+        return str !== '' &&
+            str !== 'string' &&
+            str !== 'null' &&
+            str !== 'THIS WILL BE REPLACED WITH DYNAMIC DATA FUNCTION'
+    }
 
-# DB内の全テーブルのデータをクリア（テーブル定義は保持）
-docker exec -i -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d wallet -v ON_ERROR_STOP=1 <<'SQL'
-DO $$
-DECLARE
-    tables TEXT;
-BEGIN
-    SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
-    INTO tables
-    FROM pg_tables
-    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-      AND schemaname NOT LIKE 'pg_toast%';
-
-    IF tables IS NOT NULL THEN
-        EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE';
-    END IF;
-END $$;
-SQL
-
-# データ復元
-docker exec -i -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
-  < cloudwallet_data.sql
-
-
-# PostgreSQL接続
-docker exec -it -e PGPASSWORD=wallet wallet-db \
-  psql -U wallet -d wallet
-
-# テーブル一覧確認（psql内で実行）
-\dt
-
-# データ件数確認（psql内で実行）
-SELECT COUNT(*) FROM credential_formats;
-
-
-const ALL_SETTING = 'all'
-
-// 認可方式（Cloud Wallet）
-const AUTH_METHOD_TYPES = {
-    PRE_AUTHORIZED: 'PRE_AUTHORIZED',
-    PWD: 'PWD'
+    return true
 }
 
-// 認可方式（小文字）
-const AUTH_METHOD_LOWER_TYPES = {
-    PRE_AUTHORIZED: 'pre_authorize',
-    PWD: 'pwd'
-}
+/**
+ * Credential Dataの値からフィールドタイプを取得する。
+ */
+const getFieldType = (key, value) => {
+    // 画像項目
+    if (key === 'image') {
+        return 'image'
+    }
 
-// 証明書フォーマット（Cloud Wallet）
-const FORMAT_TYPES = {
-    VC_SD_JWT: 'vc+sd-jwt',
-    VC_JWT: 'jwt_vc_json'
-}
+    // 日付項目
+    if ([
+        'issuanceDate',
+        'expirationDate',
+        'issuedAt',
+        'validFrom',
+        'validUntil'
+    ].includes(key)) {
+        return 'datetime'
+    }
 
-// 認可方式（walt.id v1.0.0）
-const WALTID_AUTH_METHOD_TYPES = {
-    PRE_AUTHORIZED: 'PRE_AUTHORIZED',
-    AUTHORIZATION_CODE: 'AUTHORIZED'
-}
+    if (typeof value === 'number') {
+        return 'number'
+    }
 
-// 証明書フォーマット（walt.id v1.0.0）
-const WALTID_FORMAT_TYPES = {
-    JWT_VC_JSON: 'jwt_vc_json',
-    SD_JWT_VC: 'dc+sd-jwt'
-}
+    if (typeof value === 'boolean') {
+        return 'boolean'
+    }
 
-module.exports = {
-    ALL_SETTING,
-    AUTH_METHOD_TYPES,
-    AUTH_METHOD_LOWER_TYPES,
-    FORMAT_TYPES,
-    WALTID_AUTH_METHOD_TYPES,
-    WALTID_FORMAT_TYPES
-}
+    if (Array.isArray(value)) {
+        return 'array'
+    }
 
+    if (value !== null && typeof value === 'object') {
+        return 'object'
+    }
+
+    return 'text'
+}
 
 /**
  * Credential Dataと証明書フォーマット定義を統合する。
- *
- * @param {object} credentialData Credentialデータ
- * @param {object|null} selectiveDisclosure 選択的開示設定
- * @param {Array} formatFields DBのフォーマット定義
- * @returns {Array}
  */
 const mergeCredentialFields = (
     credentialData = {},
     selectiveDisclosure = null,
     formatFields = []
 ) => {
-    // Credential Subjectを取得する。
-    const credentialSubject = credentialData.credentialSubject || {}
+    logger.debug('*** mergeCredentialFields start ***')
 
-    // Selective Disclosure情報を取得する。
-    const disclosureFields =
-        selectiveDisclosure?.fields
-            ?.credentialSubject
-            ?.children
-            ?.fields || {}
+    try {
+        const fieldsMap = new Map()
 
-    const fieldsMap = new Map()
+        const excludedFields = [
+            '@context',
+            'id',
+            'issuer',
+            'type',
+            'credentialSubject'
+        ]
 
-    // Credential Dataからfieldsを作成する。
-    Object.entries(credentialSubject).forEach(([key, value]) => {
-        // IDと画像は入力項目の対象外とする。
-        if (key === 'id' || key === 'image') {
-            return
-        }
+        // Selective Disclosure情報を取得する。
+        const disclosureFields =
+            selectiveDisclosure?.fields
+                ?.credentialSubject
+                ?.children
+                ?.fields || {}
 
-        // Credential Dataの値から型を判定する。
-        let type = 'text'
+        // Credential Subjectの項目を追加する。
+        const credentialSubject =
+            credentialData?.credentialSubject || {}
 
-        if (typeof value === 'number') {
-            type = 'number'
-        } else if (typeof value === 'boolean') {
-            type = 'boolean'
-        } else if (Array.isArray(value)) {
-            type = 'array'
-        } else if (value !== null && typeof value === 'object') {
-            type = 'object'
-        }
+        Object.entries(credentialSubject).forEach(([key, value]) => {
+            if (key === 'id') {
+                return
+            }
 
-        // Selective Disclosureを確認する。
-        const isDisclosure = disclosureFields[key]?.sd === true
-
-        fieldsMap.set(key, {
-            key,
-            type,
-            required: false,
-            isDisclosure
+            fieldsMap.set(key, {
+                key,
+                type: getFieldType(key, value),
+                required: false,
+                isDisclosure: disclosureFields[key]?.sd === true,
+                hasDefaultValue: hasCredentialDefaultValue(value)
+            })
         })
-    })
 
-    // DBのフォーマット定義を優先して統合する。
-    formatFields.forEach(field => {
-        if (!field?.key) {
-            return
-        }
+        // Credential Dataのトップレベル項目を追加する。
+        Object.entries(credentialData || {}).forEach(([key, value]) => {
+            if (excludedFields.includes(key)) {
+                return
+            }
 
-        // IDと画像は入力項目の対象外とする。
-        if (field.key === 'id' || field.key === 'image') {
-            return
-        }
-
-        const existingField = fieldsMap.get(field.key) || {
-            key: field.key,
-            type: 'text',
-            required: false,
-            isDisclosure: disclosureFields[field.key]?.sd === true
-        }
-
-        // DB定義にisDisclosureが存在する場合はDBを優先する。
-        fieldsMap.set(field.key, {
-            ...existingField,
-            ...field
+            fieldsMap.set(key, {
+                key,
+                type: getFieldType(key, value),
+                required: false,
+                isDisclosure: false,
+                hasDefaultValue: hasCredentialDefaultValue(value)
+            })
         })
-    })
 
-    return Array.from(fieldsMap.values())
+        // DBのフォーマット定義を優先して統合する。
+        formatFields.forEach(field => {
+            if (!field?.key) {
+                return
+            }
+
+            const existingField = fieldsMap.get(field.key) || {
+                key: field.key,
+                type: 'text',
+                required: false,
+                isDisclosure: disclosureFields[field.key]?.sd === true,
+                hasDefaultValue: false
+            }
+
+            fieldsMap.set(field.key, {
+                ...existingField,
+                ...field
+            })
+        })
+
+        return Array.from(fieldsMap.values())
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** mergeCredentialFields end ***')
+    }
 }
 
 /**
  * 証明書フォーマット定義取得サービス
- *
  * @param {object} params パラメータ
- * @returns {object}
+ * @returns
  */
 const getCredentialFormat = async (params) => {
     logger.debug('*** getCredentialFormat start ***')
@@ -199,7 +167,7 @@ const getCredentialFormat = async (params) => {
 
         // 指定されたgroupIdで検索（all以外の場合）
         if (
-            typeof groupId === 'string' &&
+            groupId &&
             groupId.trim() &&
             groupId.trim() !== ALL_SETTING
         ) {
@@ -210,8 +178,8 @@ const getCredentialFormat = async (params) => {
             })
         }
 
-        // 見つからない場合はallで検索する。
-        if (!rows || rows.length === 0) {
+        // 見つからない場合はallで検索
+        if (rows.length === 0) {
             rows = await walletDBService.select('credential_formats', {
                 group_id: ALL_SETTING,
                 type: type,
@@ -221,12 +189,10 @@ const getCredentialFormat = async (params) => {
 
         // DBからフォーマット定義を取得する。
         const formatJson = rows?.[0]?.fields || {}
-
-        const formatFields = Array.isArray(formatJson?.fields)
+        const formatFields = Array.isArray(formatJson.fields)
             ? formatJson.fields
             : []
 
-        // 認証方式一覧を取得する。
         const authType = rows?.[0]?.authType
         const authTypes = createAuthMethodTypeList(authType)
 
@@ -235,30 +201,24 @@ const getCredentialFormat = async (params) => {
 
         // typeとformatが指定された場合はProfile情報を取得する。
         if (type && format) {
-            // Credential Configuration IDを生成する。
-            const configurationFormat =
-                format === 'vc+sd-jwt'
-                    ? CREDENTIAL_FORMAT.SD_JWT_VC
+            // Cloud WalletのFormatをwalt.idのFormatに変換する。
+            const waltidFormat =
+                format === FORMAT_TYPES.VC_SD_JWT
+                    ? WALTID_FORMAT_TYPES.SD_JWT_VC
                     : format
 
+            // Credential Configuration IDを生成する。
             const credentialConfigurationId =
-                `${type}_${configurationFormat}`
+                `${type}_${waltidFormat}`
 
             // Credential Profileを取得する。
             const profile = await getCredentialProfileByConfigurationId(
                 credentialConfigurationId
             )
 
-            // Credential DataとSelective Disclosureを取得する。
             const credentialData = profile.credentialData || {}
             const selectiveDisclosure =
                 profile.selectiveDisclosure || null
-
-            // Credential Dataから画像を取得する。
-            image =
-                credentialData.credentialSubject?.image ||
-                images?.default ||
-                null
 
             // Credential DataとDB定義を統合する。
             fields = mergeCredentialFields(
@@ -266,6 +226,14 @@ const getCredentialFormat = async (params) => {
                 selectiveDisclosure,
                 formatFields
             )
+
+            // Credential Dataの画像デフォルト値を確認する。
+            const credentialImage =
+                credentialData.credentialSubject?.image
+
+            image = hasCredentialDefaultValue(credentialImage)
+                ? null
+                : images?.default || null
         }
 
         result = {
