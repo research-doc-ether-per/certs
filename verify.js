@@ -18,6 +18,31 @@ docker exec -i -e PGPASSWORD=wallet wallet-db \
   psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
   < cloudwallet_data.sql
 
+# DB内の全テーブルのデータをクリア（テーブル定義は保持）
+docker exec -i -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d wallet -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE
+    tables TEXT;
+BEGIN
+    SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+    INTO tables
+    FROM pg_tables
+    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+      AND schemaname NOT LIKE 'pg_toast%';
+
+    IF tables IS NOT NULL THEN
+        EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE';
+    END IF;
+END $$;
+SQL
+
+# データ復元
+docker exec -i -e PGPASSWORD=wallet wallet-db \
+  psql -U wallet -d wallet -v ON_ERROR_STOP=1 \
+  < cloudwallet_data.sql
+
+
 # PostgreSQL接続
 docker exec -it -e PGPASSWORD=wallet wallet-db \
   psql -U wallet -d wallet
