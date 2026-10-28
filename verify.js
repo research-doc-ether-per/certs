@@ -1,253 +1,112 @@
+"① パラメータチェック
 
-/**
- * Credential Dataのデフォルト値の有無を確認する。
- */
-const hasCredentialDefaultValue = (value) => {
-    if (value === null || value === undefined) {
-        return false
-    }
+パラメータの必須チェックを実施する。
 
-    if (typeof value === 'string') {
-        const str = value.trim()
+以下の場合、エラーを返却する。
 
-        return str !== '' &&
-            str !== 'string' &&
-            str !== 'null' &&
-            str !== 'THIS WILL BE REPLACED WITH DYNAMIC DATA FUNCTION'
-    }
+・必須情報が存在しない場合：RequireParamsNotFoundError"
+"② パラメータ取得
 
-    return true
-}
+パラメータから以下の情報を取得する。
 
-/**
- * Credential Dataの値からフィールドタイプを取得する。
- */
-const getFieldType = (key, value) => {
-    // 画像項目
-    if (key === 'image') {
-        return 'image'
-    }
+・グループID
+・証明書種別
+・証明書フォーマット"
+"③ 証明書フィールド定義情報取得
 
-    // 日付項目
-    if ([
-        'issuanceDate',
-        'expirationDate',
-        'issuedAt',
-        'validFrom',
-        'validUntil'
-    ].includes(key)) {
-        return 'datetime'
-    }
+以下の条件で証明書フィールド定義テーブルから証明書フィールド定義情報を取得する。
 
-    if (typeof value === 'number') {
-        return 'number'
-    }
+■条件（AND条件）
+・グループID：パラメータのグループIDと一致
+・証明書種別：パラメータの証明書種別と一致
+・証明書フォーマット：パラメータの証明書フォーマットと一致
 
-    if (typeof value === 'boolean') {
-        return 'boolean'
-    }
+■取得情報
+・証明書フィールド定義
+・認証方式
 
-    if (Array.isArray(value)) {
-        return 'array'
-    }
+該当レコードが存在しない場合、グループIDを「all」に変更して再取得する。"
+"④ Credential Profile情報取得
 
-    if (value !== null && typeof value === 'object') {
-        return 'object'
-    }
+証明書種別および証明書フォーマットが指定された場合、Credential Profile一覧を取得する。
 
-    return 'text'
-}
+エンドポイント：/issuer2/profiles
+メソッド：GET
+クエリパラメータ：なし
 
-/**
- * Credential Dataと証明書フォーマット定義を統合する。
- */
-const mergeCredentialFields = (
-    credentialData = {},
-    selectiveDisclosure = null,
-    formatFields = []
-) => {
-    logger.debug('*** mergeCredentialFields start ***')
+証明書種別と証明書フォーマットからCredential Configuration IDを生成する。
 
-    try {
-        const fieldsMap = new Map()
+・証明書フォーマットが「vc+sd-jwt」の場合、「dc+sd-jwt」に変換する。
+・Credential Configuration ID：証明書種別 +「_」+ 証明書フォーマット
 
-        const excludedFields = [
-            '@context',
-            'id',
-            'issuer',
-            'type',
-            'credentialSubject'
-        ]
+取得したCredential Profile一覧から、Credential Configuration IDが一致するCredential Profileを取得する。
 
-        // Selective Disclosure情報を取得する。
-        const disclosureFields =
-            selectiveDisclosure?.fields
-                ?.credentialSubject
-                ?.children
-                ?.fields || {}
+■取得情報
+・credentialData
+・selectiveDisclosure"
+"⑤ 証明書フィールド定義生成
 
-        // Credential Subjectの項目を追加する。
-        const credentialSubject =
-            credentialData?.credentialSubject || {}
+Credential ProfileのcredentialDataから証明書フィールド定義を生成する。
 
-        Object.entries(credentialSubject).forEach(([key, value]) => {
-            if (key === 'id') {
-                return
-            }
+■取得対象
+・credentialSubject直下の項目（idを除く）
+・credentialData直下の項目（@context、id、issuer、type、credentialSubjectを除く）
 
-            fieldsMap.set(key, {
-                key,
-                type: getFieldType(key, value),
-                required: false,
-                isDisclosure: disclosureFields[key]?.sd === true,
-                hasDefaultValue: hasCredentialDefaultValue(value)
-            })
-        })
+■設定情報
+・key：項目名
+・type：項目名および値から判定したフィールドタイプ
+・required：false
+・isDisclosure：selectiveDisclosureでsdがtrueの場合はtrue、それ以外はfalse
+・hasDefaultValue：デフォルト値が存在する場合はtrue、それ以外はfalse
 
-        // Credential Dataのトップレベル項目を追加する。
-        Object.entries(credentialData || {}).forEach(([key, value]) => {
-            if (excludedFields.includes(key)) {
-                return
-            }
+■フィールドタイプ判定
+・image：image
+・issuanceDate、expirationDate、issuedAt、validFrom、validUntil：datetime
+・数値：number
+・真偽値：boolean
+・配列：array
+・オブジェクト：object
+・上記以外：text
 
-            fieldsMap.set(key, {
-                key,
-                type: getFieldType(key, value),
-                required: false,
-                isDisclosure: false,
-                hasDefaultValue: hasCredentialDefaultValue(value)
-            })
-        })
+■デフォルト値判定
+以下の場合、hasDefaultValueにfalseを設定する。
 
-        // DBのフォーマット定義を優先して統合する。
-        formatFields.forEach(field => {
-            if (!field?.key) {
-                return
-            }
+・null
+・undefined
+・空文字列
+・「string」
+・「null」
+・「THIS WILL BE REPLACED WITH DYNAMIC DATA FUNCTION」
 
-            const existingField = fieldsMap.get(field.key) || {
-                key: field.key,
-                type: 'text',
-                required: false,
-                isDisclosure: disclosureFields[field.key]?.sd === true,
-                hasDefaultValue: false
-            }
+上記以外の場合、trueを設定する。"
+"⑥ 証明書フィールド定義統合
 
-            fieldsMap.set(field.key, {
-                ...existingField,
-                ...field
-            })
-        })
+Credential Profileから生成した証明書フィールド定義と、証明書フィールド定義テーブルから取得した情報を統合する。
 
-        return Array.from(fieldsMap.values())
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** mergeCredentialFields end ***')
-    }
-}
+■統合条件
+・keyが一致する場合、DBの定義を優先する。
+・Credential Profileのみに存在する項目は、そのまま追加する。
+・DBのみに存在する項目は、そのまま追加する。"
+"⑦ 証明書画像データ取得
 
-/**
- * 証明書フォーマット定義取得サービス
- * @param {object} params パラメータ
- * @returns
- */
-const getCredentialFormat = async (params) => {
-    logger.debug('*** getCredentialFormat start ***')
-    logger.debug('params: ', JSON.stringify(params, null, 2))
+Credential ProfileのcredentialData.credentialSubject.imageを取得する。
 
-    const { groupId, type, format } = params
+・デフォルト値が存在する場合、証明書画像データにnullを設定する。
+・デフォルト値が存在しない場合、デフォルト画像データを取得する。
+・デフォルト画像データも存在しない場合、nullを設定する。"
+"⑧ 認証方式設定
 
-    let result = {}
+証明書フィールド定義テーブルから取得した認証方式に応じて、以下の値を設定する。
 
-    try {
-        let rows = []
+・認証方式が「all」の場合：「pre_authorized」、「pwd」
+・認証方式が「pre_authorized」の場合：「pre_authorized」
+・認証方式が「pwd」の場合：「pwd」
+・認証方式が取得できない場合：空配列"
+"⑨ レスポンス返却
 
-        // 指定されたgroupIdで検索（all以外の場合）
-        if (
-            groupId &&
-            groupId.trim() &&
-            groupId.trim() !== ALL_SETTING
-        ) {
-            rows = await walletDBService.select('credential_formats', {
-                group_id: groupId.trim(),
-                type: type,
-                format: format
-            })
-        }
+以下の情報を返却値として設定し、成功レスポンスを返却する。
 
-        // 見つからない場合はallで検索
-        if (rows.length === 0) {
-            rows = await walletDBService.select('credential_formats', {
-                group_id: ALL_SETTING,
-                type: type,
-                format: format
-            })
-        }
-
-        // DBからフォーマット定義を取得する。
-        const formatJson = rows?.[0]?.fields || {}
-        const formatFields = Array.isArray(formatJson.fields)
-            ? formatJson.fields
-            : []
-
-        const authType = rows?.[0]?.authType
-        const authTypes = createAuthMethodTypeList(authType)
-
-        let fields = formatFields
-        let image = images?.default || null
-
-        // typeとformatが指定された場合はProfile情報を取得する。
-        if (type && format) {
-            // Cloud WalletのFormatをwalt.idのFormatに変換する。
-            const waltidFormat =
-                format === FORMAT_TYPES.VC_SD_JWT
-                    ? WALTID_FORMAT_TYPES.SD_JWT_VC
-                    : format
-
-            // Credential Configuration IDを生成する。
-            const credentialConfigurationId =
-                `${type}_${waltidFormat}`
-
-            // Credential Profileを取得する。
-            const profile = await getCredentialProfileByConfigurationId(
-                credentialConfigurationId
-            )
-
-            const credentialData = profile.credentialData || {}
-            const selectiveDisclosure =
-                profile.selectiveDisclosure || null
-
-            // Credential DataとDB定義を統合する。
-            fields = mergeCredentialFields(
-                credentialData,
-                selectiveDisclosure,
-                formatFields
-            )
-
-            // Credential Dataの画像デフォルト値を確認する。
-            const credentialImage =
-                credentialData.credentialSubject?.image
-
-            image = hasCredentialDefaultValue(credentialImage)
-                ? null
-                : images?.default || null
-        }
-
-        result = {
-            fields,
-            image,
-            authTypes
-        }
-
-        return result
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** getCredentialFormat end ***')
-    }
-}
+・fields：統合後の証明書フィールド定義
+・image：証明書画像データ
+・authTypes：認証方式"
+"※処理中に上記以外のエラーが発生した場合、InternalServerErrorを返却する。"
