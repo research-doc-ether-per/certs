@@ -1,3 +1,21 @@
+
+ // credentialStatusEnabled: false
+
+// 登録済みのPayloadを取得する。
+const payload = JSON.parse(addCert.vc_info)
+
+// Credential Offer発行時にCredential Statusを設定する。
+payload.mapping = prepareCredentialStatusMapping({
+    type: addCert.type,
+    mapping: payload.mapping || {},
+    issuerDid: payload.issuerDid || addCert.issuer
+})
+
+// Credential Offerを作成する。
+const offerResult =
+    await issuer2Service.createCredentialOffer(payload)
+
+
 ■有効期限が指定されている場合
 ・指定された有効期限をCredential Dataに設定する。
 
