@@ -1,152 +1,265 @@
+
 /**
- * Cloud WalletのCredential Formatをwalt.id形式に変換する。
+ * オブジェクトかどうかを確認する。
  */
-const convertToWaltidFormat = (format) => {
-    switch (format) {
-        case FORMAT_TYPES.VC_JWT:
-            return WALTID_FORMAT_TYPES.JWT_VC_JSON
+const isPlainObject = (value) => {
+    return value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+}
 
-        case FORMAT_TYPES.VC_SD_JWT:
-            return WALTID_FORMAT_TYPES.SD_JWT_VC
+/**
+ * Credential Dataを統合する。
+ */
+const mergeCredentialData = (base = {}, overrides = {}) => {
+    const result = structuredClone(base)
 
-        case WALTID_FORMAT_TYPES.JWT_VC_JSON:
-        case WALTID_FORMAT_TYPES.SD_JWT_VC:
-            return format
+    Object.entries(overrides).forEach(([key, value]) => {
+        if (value === undefined) {
+            return
+        }
+
+        if (
+            isPlainObject(value) &&
+            isPlainObject(result[key])
+        ) {
+            result[key] = mergeCredentialData(result[key], value)
+        } else {
+            result[key] = structuredClone(value)
+        }
+    })
+
+    return result
+}
+
+/**
+ * Cloud Walletの認証方式をwalt.id形式に変換する。
+ */
+const convertToWaltidAuthMethod = (authenticationMethod) => {
+    switch (authenticationMethod?.toUpperCase()) {
+        case AUTH_METHOD_TYPES.PRE_AUTHORIZED:
+            return WALTID_AUTH_METHOD_TYPES.PRE_AUTHORIZED
+
+        case WALTID_AUTH_METHOD_TYPES.AUTHORIZATION_CODE:
+            return WALTID_AUTH_METHOD_TYPES.AUTHORIZATION_CODE
 
         default:
-            throw new Error('Unsupported Credential format.')
+            throw new Error('Unsupported authentication method.')
     }
 }
 
-
-
-
 /**
- * Credential Profileの存在及び発行パラメータを確認する。
+ * Credential Status Webhook用のMappingを設定する。
  */
-const validateCredentialProfile = async (
-    credentialConfigurationId,
-    format = null,
-    accessToken = null
-) => {
-    logger.debug('*** validateCredentialProfile start ***')
+const prepareCredentialStatusMapping = ({
+    profile,
+    mapping,
+    webhookBaseUrl,
+    issuerDid = null
+}) => {
+    logger.debug('*** prepareCredentialStatusMapping start ***')
 
     try {
-        if (!credentialConfigurationId) {
-            throw new Error('Required issuance parameters are missing.')
+        // Credential IDを生成する。
+        const credentialId = `urn:uuid:${uuid()}`
+
+        const type = profile.name
+        const targetIssuerDid = issuerDid || profile.issuerDid
+
+        // Webhook URLを生成する。
+        const webhookUrl = new URL(webhookBaseUrl)
+
+        webhookUrl.searchParams.set('type', type)
+        webhookUrl.searchParams.set('issuerDid', targetIssuerDid)
+        webhookUrl.searchParams.set('credentialId', credentialId)
+
+        // Credential Status用Mappingを設定する。
+        const result = {
+            ...mapping,
+            id: credentialId,
+            credentialStatus: `<webhook-json:${webhookUrl.toString()}>`
         }
 
-        // Credential ProfileとIssuer Metadataを取得する。
-        const [profile, metadata] = await Promise.all([
-            getCredentialProfileByConfigurationId(
-                credentialConfigurationId,
-                accessToken
-            ),
-            getCredentialIssuerMetadata(accessToken)
-        ])
+        logger.debug(
+            'credentialStatus mapping: ',
+            JSON.stringify(result, null, 2)
+        )
 
-        // Credential Configurationを取得する。
-        const configuration =
-            metadata?.credential_configurations_supported?.[credentialConfigurationId]
-
-        if (!configuration) {
-            throw new Error('Credential Configuration not found.')
-        }
-
-        // フォーマットが指定された場合のみ検証する。
-        if (format !== null && format !== undefined && format !== '') {
-            // Cloud WalletのFormatをwalt.id形式に変換する。
-            const waltidFormat = convertToWaltidFormat(format)
-
-            // Credential Configuration IDを確認する。
-            if (profile.credentialConfigurationId !== credentialConfigurationId) {
-                throw new Error('Credential Configuration ID does not match.')
-            }
-
-            // Credentialフォーマットを確認する。
-            if (configuration.format !== waltidFormat) {
-                throw new Error('Credential format does not match.')
-            }
-
-            // Credentialタイプを確認する。
-            switch (waltidFormat) {
-                case WALTID_FORMAT_TYPES.JWT_VC_JSON: {
-                    const suffix = `_${WALTID_FORMAT_TYPES.JWT_VC_JSON}`
-
-                    if (!credentialConfigurationId.endsWith(suffix)) {
-                        throw new Error('Invalid Credential Configuration ID.')
-                    }
-
-                    // Credential Configuration IDからタイプを取得する。
-                    const type = credentialConfigurationId.slice(0, -suffix.length)
-
-                    // MetadataとProfileからタイプを取得する。
-                    const metadataTypes =
-                        configuration.credential_definition?.type
-
-                    const profileTypes =
-                        profile.credentialData?.type
-
-                    // タイプ配列の最後の要素と比較する。
-                    if (
-                        !type ||
-                        !Array.isArray(metadataTypes) ||
-                        !Array.isArray(profileTypes) ||
-                        metadataTypes.length === 0 ||
-                        profileTypes.length === 0 ||
-                        metadataTypes.at(-1) !== type ||
-                        profileTypes.at(-1) !== type
-                    ) {
-                        throw new Error('Credential type does not match.')
-                    }
-
-                    break
-                }
-
-                case WALTID_FORMAT_TYPES.SD_JWT_VC: {
-                    const suffix = `_${WALTID_FORMAT_TYPES.SD_JWT_VC}`
-
-                    if (!credentialConfigurationId.endsWith(suffix)) {
-                        throw new Error('Invalid Credential Configuration ID.')
-                    }
-
-                    // Credential Configuration IDからタイプを取得する。
-                    const type = credentialConfigurationId.slice(0, -suffix.length)
-
-                    // VCTからタイプを取得する。
-                    const vct = configuration.vct
-
-                    if (typeof vct !== 'string' || !vct) {
-                        throw new Error('Credential VCT is missing.')
-                    }
-
-                    const vctType =
-                        vct.substring(vct.lastIndexOf('/') + 1)
-
-                    // Credentialタイプを比較する。
-                    if (!type || !vctType || type !== vctType) {
-                        throw new Error('Credential type does not match.')
-                    }
-
-                    break
-                }
-
-                default:
-                    throw new Error('Unsupported Credential format.')
-            }
-        }
-
-        // ProfileにフォーマットとCredential Metadataを追加する。
-        return {
-            ...profile,
-            format: configuration.format,
-            credentialMetadata: configuration.credential_metadata || null
-        }
+        return result
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
-        logger.debug('*** validateCredentialProfile end ***')
+        logger.debug('*** prepareCredentialStatusMapping end ***')
     }
 }
+
+/**
+ * Credential Offer用のPayloadを準備する。
+ */
+const prepareCredentialOfferPayload = ({
+    profile,
+    offerData,
+    issuanceDate = null,
+    expirationDate = null,
+    expirationDateSpecified = false,
+    image = null,
+    issuerDid = null,
+    issuerKey = null,
+    useCredentialStatusWebhook = false,
+    webhookBaseUrl = null,
+    expiresInSeconds = null
+}) => {
+    logger.debug('*** prepareCredentialOfferPayload start ***')
+
+    try {
+        const {
+            credentialData: inputCredentialData = {},
+            authenticationMethod
+        } = offerData
+
+        // 認証方式を変換する。
+        const authMethod = convertToWaltidAuthMethod(
+            authenticationMethod
+        )
+
+        // Profileと入力されたCredential Dataを統合する。
+        const credentialData = mergeCredentialData(
+            profile.credentialData || {},
+            inputCredentialData || {}
+        )
+
+        // ProfileのMappingを取得する。
+        let mapping = structuredClone(profile.mapping || {})
+
+        // 発行日時を設定する。
+        if (issuanceDate != null) {
+            credentialData.issuanceDate = issuanceDate
+            delete mapping.issuanceDate
+        }
+
+        // 有効期限を設定する。
+        if (expirationDateSpecified) {
+            if (expirationDate != null && expirationDate !== '') {
+                credentialData.expirationDate = expirationDate
+            } else {
+                delete credentialData.expirationDate
+            }
+
+            delete mapping.expirationDate
+        }
+
+        // 証明書画像を設定する。
+        if (image != null && image !== '') {
+            if (!isPlainObject(credentialData.credentialSubject)) {
+                credentialData.credentialSubject = {}
+            }
+
+            credentialData.credentialSubject.image = image
+        }
+
+        // Credential Status Webhookを設定する。
+        if (useCredentialStatusWebhook) {
+            mapping = prepareCredentialStatusMapping({
+                profile,
+                mapping,
+                webhookBaseUrl,
+                issuerDid
+            })
+        }
+
+        // Credential Offer用のPayloadを生成する。
+        const payload = {
+            profileId: profile.profileId,
+            authMethod,
+            valueMode: 'BY_REFERENCE',
+            credentialData,
+            mapping
+        }
+
+        // Selective Disclosureを設定する。
+        if (profile.selectiveDisclosure != null) {
+            payload.selectiveDisclosure =
+                structuredClone(profile.selectiveDisclosure)
+        }
+
+        // Offer URLの有効期限を設定する。
+        if (expiresInSeconds != null) {
+            payload.expiresInSeconds = expiresInSeconds
+        }
+
+        // Issuer DIDを設定する。
+        if (issuerDid != null) {
+            payload.issuerDid = issuerDid
+        }
+
+        // Issuer Keyを設定する。
+        if (issuerKey != null) {
+            payload.issuerKey = issuerKey
+        }
+
+        logger.debug(
+            'credential_offer payload: ',
+            JSON.stringify(payload, null, 2)
+        )
+
+        return payload
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** prepareCredentialOfferPayload end ***')
+    }
+}
+
+
+
+
+
+
+
+
+
+// Credential Profileの存在及び発行パラメータを確認する。
+const profile = await issuer2Service.validateCredentialProfile(
+    credentialConfigurationId,
+    format
+)
+
+// 入力された有効期限を取得する。
+const inputExpirationDate =
+    offerData.credentialData?.expirationDate
+
+// 発行日時と有効期限を準備する。
+const { issuanceDate, expirationDate } =
+    prepareCredentialDates(inputExpirationDate)
+
+// Credential Offer用のPayloadを準備する。
+const payload = prepareCredentialOfferPayload({
+    profile,
+    offerData,
+    issuanceDate,
+    expirationDate,
+    expirationDateSpecified:
+        Object.hasOwn(
+            offerData.credentialData || {},
+            'expirationDate'
+        ),
+    image,
+    issuerDid,
+    issuerKey,
+    useCredentialStatusWebhook,
+    webhookBaseUrl: credentialStatusWebhookUrl
+})
+
+// Credential Offerを作成する。
+const offerResult =
+    await issuer2Service.createCredentialOffer(payload)
+
+// Credential Offer URLを取得する。
+credential_offer_url = offerResult.credentialOffer
+
+logger.debug('credential_offer_url: ', credential_offer_url)
+
