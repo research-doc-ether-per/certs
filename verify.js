@@ -1,314 +1,321 @@
 
 "処理内容","備考"
 "個人ユーザ専用API認証処理を実施する。","共通処理「個人ユーザ専用API認証」参照"
-"パラメータの必須チェックを実施する。
+"リクエストパラメータの必須チェックを実施する。
 
-以下の場合はエラーを返却する。
-・必須情報が存在しない場合：RequireParamsNotFoundError",""
+必須情報が存在しない場合は、RequireParamsNotFoundErrorを返却する。",""
 "リクエストパラメータから以下の情報を取得する。
 
-・グループID（groupId）
-・発行する証明書の情報（offerData）
-・追加可能証明書カテゴリ（category）
-・対象者（targets）
-・証明書名（certName）
-・Credential Offer Endpoint URL（endpointUrl）
+・グループID
+・発行する証明書の情報
+・追加可能証明書カテゴリ
+・対象者
+・証明書名
+・Credential Offer Endpoint URL
 
 発行する証明書の情報から以下を取得する。
-・Credential Configuration ID（credentialConfigurationId）
-・Credential Data（credentialData）
-・認証方式（authenticationMethod）
-・証明書タイプ（type）",""
-"issuerテーブルにグループIDが一致する情報が存在するか確認する。
+・Credential Configuration ID
+・Credential Data
+・認証方式
+・証明書タイプ",""
+"issuerテーブルに、指定されたグループIDと一致する情報が存在するか確認する。
 
 存在しない場合はInvalidParamsErrorを返却する。
 存在する場合は以降の処理を継続する。",""
-"設定ファイルからデフォルトIssuer情報を取得する。
+"設定ファイルから以下のデフォルトIssuer情報を取得する。
 
-・issuerKey
-・issuerDid
+・Issuer Key
+・Issuer DID
 
-デフォルトIssuer情報がnullまたは空オブジェクトの場合は、issuerKey及びissuerDidをnullとして扱う。
+デフォルトIssuer情報が未設定または空の場合は、Issuer Key及びIssuer DIDを未指定として扱う。
 
-Issuer情報が指定されていない場合は、Credential Profileに定義されたIssuer情報を利用する。",""
-"リクエストで指定された認証方式をwalt.id形式に変換する。
+Issuer情報が未指定の場合は、Credential Profileに定義されたIssuer情報を使用する。",""
+"リクエストで指定された認証方式を、walt.id Issuer2 APIで使用する認証方式に変換する。
 
-Issuer2 ServiceのconvertToWaltidAuthMethodを呼び出す。
+事前認可方式の場合：
+・PRE_AUTHORIZEDを指定する。
 
-対応する認証方式に変換できない場合はエラーを返却する。","認証方式の変換はissueCredentialOfferUrlで実施する。"
-"Credential Profile及び証明書設定情報を取得し、検証する。
+認可コード方式の場合：
+・AUTHORIZEDを指定する。
 
-Issuer2 ServiceのvalidateCredentialProfileを呼び出す。
+対応していない認証方式が指定された場合はエラーを返却する。","認証方式の変換はCloud Walletとwalt.idの対応定義に従う。"
+"walt.id Issuer2 APIから、指定されたCredential Configuration IDに対応するCredential Profileを取得する。
 
-指定パラメータ：
-・credentialConfigurationId
-・type
+Credential Profileが存在しない場合、または同一のCredential Configuration IDに対応するProfileを一意に特定できない場合はエラーを返却する。
 
-Credential Profile及びCredential Issuer Metadataを取得する。
+取得したProfileのCredential Configuration IDが指定値と一致することを確認する。","Credential Profile取得先：
+GET /issuer2/profiles"
+"walt.id Issuer2 APIからCredential Issuer Metadataを取得する。
 
-以下の内容を確認する。
-・Credential Configuration IDに一致するProfileが存在すること
-・Credential Issuer Metadataに対象Configurationが存在すること
-・ProfileのCredential Configuration IDが指定値と一致すること
-・Metadataのformatがサポート対象であること
-・Credential Configuration IDの末尾とformatが一致すること
-・指定されたtypeがCredential Configuration IDの証明書タイプと一致すること
-・指定されたtypeがMetadataから取得した証明書タイプと一致すること
+Credential Issuer Metadataのcredential_configurations_supportedから、指定されたCredential Configuration IDに対応する証明書設定情報を取得する。
 
-JWT VCの場合：
-credential_definition.typeの最後の要素から証明書タイプを取得する。
-ProfileのcredentialData.typeの最後の要素との一致も確認する。
+対象の証明書設定情報が存在しない場合はエラーを返却する。","Credential Issuer Metadata取得先：
+GET /.well-known/openid-credential-issuer/openid4vci"
+"取得した証明書設定情報からフォーマットを取得し、Credential Configuration IDと一致することを確認する。
 
-SD-JWT VCの場合：
-vctの最後の「/」以降から証明書タイプを取得する。
+対象フォーマット：
+・JWT VC：jwt_vc_json
+・SD-JWT VC：dc+sd-jwt
 
-検証結果として以下の情報を取得する。
-・Credential Profile
-・証明書タイプ（type）
-・証明書フォーマット（format）
-・Credential Metadata（credentialMetadata）
+Credential Configuration IDの末尾が「_」と取得したフォーマットを連結した値と一致することを確認する。
 
-検証に失敗した場合はエラーを返却する。","Issuer2 ServiceのvalidateCredentialProfileを使用する。
-
-Credential Configuration IDの例：
+フォーマットが未対応の場合、またはCredential Configuration IDと一致しない場合はエラーを返却する。","Credential Configuration IDの例：
 Awards_jwt_vc_json
 Awards_dc+sd-jwt"
-"Credential Metadataのclaimsから、有効期限（expirationDate）のPathを取得する。
+"Credential Issuer Metadataから証明書タイプを取得する。
 
-取得したPathに従って、リクエストのcredentialDataから有効期限を取得する。
+JWT VCの場合：
+・credential_definition.typeの最後の要素を証明書タイプとして取得する。
+・Credential ProfileのcredentialData.typeの最後の要素が取得した証明書タイプと一致することを確認する。
 
-有効期限の指定有無を確認する。","getClaimPathByKey及びgetValueByPathを使用する。"
-"有効期限を確認し、発行日時を取得する。
+SD-JWT VCの場合：
+・vctの最後の「/」以降の値を証明書タイプとして取得する。
+
+Credential Configuration IDからフォーマット部分を除いた値が、取得した証明書タイプと一致することを確認する。
+
+リクエストで証明書タイプが指定されている場合は、取得した証明書タイプと一致することを確認する。
+
+一致しない場合、または証明書タイプを取得できない場合はエラーを返却する。","証明書タイプの例：
+Awards
+
+JWT VCとSD-JWT VCで証明書タイプの取得元が異なる。"
+"検証済みの証明書設定情報として以下を保持する。
+
+・Credential Profile
+・証明書タイプ
+・証明書フォーマット
+・Credential Metadata
+
+Credential Metadataは、対象の証明書設定情報に定義されたcredential_metadataから取得する。",""
+"Credential Metadataのclaimsから、有効期限に該当する項目のPathを取得する。
+
+取得したPathに従って、リクエストのCredential Dataから有効期限を取得する。
+
+対象のPathが存在しない場合は、有効期限を取得しない。
+
+また、有効期限がリクエストに明示的に指定されているか確認する。","Pathの最終要素がexpirationDateに一致する項目を対象とする。"
+"発行日時及び有効期限を準備する。
 
 有効期限が指定されている場合：
 ・指定された有効期限のフォーマットを取得する。
-・有効期限のフォーマットに合わせて現在日時を取得する。
+・同じフォーマットで現在日時を取得し、発行日時とする。
 ・有効期限が発行日時以前の場合はInvalidParamsErrorを返却する。
 
 有効期限が指定されていない場合：
 ・現在日時を発行日時として取得する。
 
-取得情報：
-・issuanceDate
-・expirationDate","prepareCredentialDatesを使用する。
+取得した発行日時及び有効期限を以降の処理に使用する。","有効期限がリクエストに明示的に指定されていない場合、Credential Profileのデフォルト有効期限設定を保持する。"
+"取得した証明書フォーマットをCloud Walletで使用するフォーマットに変換する。
 
-有効期限が明示的に指定されていない場合、Credential ProfileのデフォルトMappingを保持する。"
-"証明書フォーマットをCloud Wallet形式に変換する。
+JWT VCの場合：
+・jwt_vc_jsonを使用する。
 
-Issuer2 ServiceのconvertToCloudWalletFormatを呼び出す。
+SD-JWT VCの場合：
+・dc+sd-jwtをvc+sd-jwtに変換する。
 
-変換内容：
-・jwt_vc_json → jwt_vc_json
-・dc+sd-jwt → vc+sd-jwt
+変換後のフォーマットを追加可能証明書情報テーブルへの登録に使用する。
 
-未対応のフォーマットの場合はエラーを返却する。","Cloud WalletのDB登録用フォーマットとして使用する。"
-"状態リストテーブルから対象の状態リスト情報を確認する。
+対応していないフォーマットの場合はエラーを返却する。",""
+"状態リストテーブルから、以下の条件に一致する状態リスト情報が存在するか確認する。
 
 検索条件：
-・グループID：指定されたgroupId
-・証明書タイプ：検証済みのtype
+・グループID：指定されたグループID
+・証明書タイプ：検証済みの証明書タイプ
 
-対象の状態リストが存在する場合：
-・作成済みとして扱う。
-・新規作成を行わない。
+状態リスト情報が存在する場合は、新規作成を行わない。
 
-対象の状態リストが存在しない場合：
-・既存のStatus List作成処理を呼び出す。
-・取得したStatus List URLを保持する。","prepareStatusListUrlを使用する。
-
-新規作成時は既存のcreateBSL処理を使用する。"
+存在しない場合は、対象証明書タイプの状態リストを新規作成し、取得した状態リストURLを保持する。","既存の状態リスト管理処理を継続する。"
 "DBトランザクションを開始する。","★トランザクション開始"
-"状態リストが未登録の場合、状態リストテーブルに情報を登録する。
+"状態リストが未登録の場合、状態リストテーブルに以下の情報を登録する。
 
-登録情報：
-・グループID：指定されたgroupId
-・証明書タイプ：検証済みのtype
-・状態リストURL：取得したstatusListUrl
+・グループID：指定されたグループID
+・証明書タイプ：検証済みの証明書タイプ
+・状態リストURL：取得した状態リストURL
 
-状態リストが登録済みの場合は登録処理を実施しない。","registerStatusListを使用する。"
-"追加可能証明書情報テーブルに証明書情報を登録し、追加可能証明書IDを取得する。
+状態リストが登録済みの場合は、登録処理を実施しない。",""
+"追加可能証明書情報テーブルに以下の情報を登録する。
 
-登録情報：
-・グループID：指定されたgroupId
-・カテゴリ：指定されたcategory
+・追加可能証明書ID：自動採番されたID
+・グループID：指定されたグループID
+・カテゴリ：指定された追加可能証明書カテゴリ
 ・証明書情報：空文字
 ・Credential Offer URL：空文字
-・Issuer DID：設定ファイルから取得したissuerDid
-・証明書タイプ：検証済みのtype
-・証明書フォーマット：Cloud Wallet形式に変換したformat
-・認証方式：リクエストで指定されたauthenticationMethodを小文字に変換した値
-・証明書名：指定されたcertName
+・Issuer DID：設定ファイルから取得したIssuer DID
+・証明書タイプ：検証済みの証明書タイプ
+・証明書フォーマット：Cloud Wallet形式に変換したフォーマット
+・認証方式：リクエストで指定された認証方式を小文字に変換した値
+・証明書名：指定された証明書名
 
-登録結果から追加可能証明書ID（docId）を取得する。","テーブル：add_cert
+登録結果から追加可能証明書IDを取得する。","テーブル：add_cert"
+"Credential Offerに使用するCredential Dataを準備する。
 
-issuerDidがnullの場合のDB登録可否は既存のDB制約に従う。"
-"Credential Offer用のPayloadを準備する。
+取得したCredential ProfileのcredentialDataを基準として、リクエストで指定されたcredentialDataを統合する。
 
-prepareCredentialOfferPayloadを呼び出す。
+同一項目が存在する場合は、リクエストで指定された値を優先する。
 
-指定情報：
-・Credential Profile
-・Credential Metadata
-・変換済み認証方式（authMethod）
-・リクエストの証明書情報（offerData）
-・発行日時（issuanceDate）
-・有効期限（expirationDate）
-・有効期限の指定有無（expirationDateSpecified）
-・追加可能証明書ID（docId）
-・検証済み証明書タイプ（type）
-・Issuer DID（issuerDid）
-・Issuer Key（issuerKey）
+オブジェクト形式の項目は、階層構造を保持したまま再帰的に統合する。
 
-Credential ProfileのcredentialDataを基準として、リクエストのcredentialDataを再帰的に統合する。
+Credential Profileに定義されていない項目についても、リクエストに指定されている場合は追加する。
 
-Profileに定義されていない項目についても、リクエストに指定されている場合はCredential Dataに追加する。","prepareCredentialOfferPayloadを使用する。
+リクエストに指定されていないProfileの既存項目は保持する。","Credential Profileの定義を基本とし、必要な情報のみ上書きする。"
+"Credential Metadataのclaimsから、以下の項目に対応するPathを取得する。
 
-Credential Profileの定義を基本とし、必要な情報のみ上書きする。"
-"Credential Metadataのclaimsに定義されたPathに従い、Credential Dataを設定する。
-
-対象項目：
 ・証明書タイプ（type）
 ・追加可能証明書ID（docId）
 ・発行日時（issuanceDate）
 ・有効期限（expirationDate）
 ・証明書画像（image）
 
-発行日時：
-・指定されたPathに発行日時を設定する。
-・対応するProfileの動的Mappingを削除する。
+各Pathの最終要素が対象項目名と一致する情報を取得する。
 
-有効期限：
-・明示的に有効期限が指定された場合は指定されたPathに設定する。
-・明示的に無期限が指定された場合は対象Pathの値を削除する。
-・有効期限が指定されていない場合はProfileのデフォルト設定を保持する。
+対象のPathが存在しない場合は、その項目に対するPath指定の設定処理を実施しない。",""
+"発行日時をCredential Dataに設定する。
 
-追加可能証明書ID：
-・MetadataにdocIdのPathが存在する場合は取得したdocIdを設定する。
+発行日時のPathが取得できた場合：
+・取得したPathに従って、準備した発行日時を設定する。
+・Credential Profileの発行日時に対応する動的Mappingを削除する。
 
-証明書タイプ：
-・Metadataに対応する業務項目のPathが存在する場合は値を設定する。
-・JWT VCのトップレベルtype配列を文字列で上書きしない。
+発行日時のPathが取得できない場合は、Credential Profileの既存設定を保持する。","発行日時の動的Mappingを変更する場合は、対応する発行日時の設定のみを対象とする。"
+"有効期限をCredential Dataに設定する。
 
-証明書画像：
-・リクエストの画像、Profileの画像、デフォルト画像の順で取得する。
-・画像が存在し、MetadataにPathが定義されている場合は設定する。","既存の以下のメソッドを使用する。
-・getClaimPathByKey
-・getValueByPath
-・setValueByPath
-・deleteValueByPath
+有効期限が明示的に指定され、Pathが取得できた場合：
+・有効期限が存在する場合は、取得したPathに従って設定する。
+・無期限が明示的に指定された場合は、対象Pathの有効期限を削除する。
+・Credential Profileの有効期限に対応する動的Mappingを削除する。
 
-発行日時及び有効期限以外のProfile Mappingは原則として保持する。"
-"Credential ProfileのMappingを取得し、Credential Status Webhook用の情報を設定する。
+有効期限が明示的に指定されていない場合：
+・Credential Profileの既存設定及び動的Mappingを保持する。",""
+"追加可能証明書IDをCredential Dataに設定する。
 
-設定ファイルからWebhook URLを取得する。
+Credential MetadataにdocIdのPathが存在する場合は、取得した追加可能証明書IDを指定されたPathに設定する。
+
+docIdのPathが存在しない場合は、追加可能証明書IDの設定を行わない。",""
+"証明書タイプをCredential Dataに設定する。
+
+Credential Metadataに業務項目としてのtypeのPathが存在する場合は、検証済みの証明書タイプに対応する値を設定する。
+
+JWT VCのトップレベルtypeは証明書の種類を表す配列として保持し、業務項目の文字列で上書きしない。",""
+"証明書画像をCredential Dataに設定する。
+
+以下の優先順位で画像データを取得する。
+・リクエストで指定された証明書画像
+・Credential Profileに定義された証明書画像
+・設定ファイルに定義されたデフォルト証明書画像
+
+画像が取得でき、Credential MetadataにimageのPathが存在する場合は、指定されたPathに画像データを設定する。
+
+画像が取得できない場合は、画像の追加処理を行わない。","デフォルト証明書画像は設定ファイルに定義された画像データから取得する。"
+"Credential Profileに定義されたMappingを取得する。
+
+以下の項目以外については、Profileの既存Mappingを保持する。
+
+・id
+・issuanceDate
+・expirationDate
+
+発行日時及び有効期限に対する動的Mappingは、Credential Dataへの明示的な設定内容に応じて必要な場合のみ変更する。
+
+Issuer DID及びCredential Subject DID等の既存Mappingは保持する。","Profileに定義された動的Mappingを基本として使用する。"
+"Credential Status Webhook用の情報を設定する。
 
 Credential IDをUUID形式で生成する。
 
+設定ファイルからCredential Status Webhook URLを取得する。
+
 Webhook URLに以下のクエリパラメータを設定する。
 ・type：検証済みの証明書タイプ
-・issuerDid：指定されたIssuer DIDまたはProfileのIssuer DID
+・issuerDid：指定されたIssuer DID。未指定の場合はCredential ProfileのIssuer DID
 ・credentialId：生成したCredential ID
 
-Profileの既存Mappingを保持したまま、以下を設定する。
+取得したWebhook URLを動的データ取得用の形式に変換する。
+
+Credential ProfileのMappingに以下の情報を設定する。
 ・id：生成したCredential ID
-・credentialStatus：Webhook URLを使用する動的Mapping
+・credentialStatus：Webhookによる動的データ取得情報
 
-Credential Status Webhookは毎回設定し、利用有無のFlag判定は行わない。","prepareCredentialStatusMappingを使用する。
+その他のMappingは保持する。
 
-Webhook URLはcommonIssuerServiceの設定ファイルから取得する。
+Credential Status WebhookはすべてのCredential Offerに設定する。","Webhook URLは設定ファイルから取得する。
 
-Profileのissuer及びcredentialSubject等のMappingは保持する。"
-"Credential Offer作成用Payloadを生成する。
+Credential Status Webhookの利用有無による分岐処理は行わない。"
+"Credential Offer作成用のリクエスト情報を生成する。
 
-設定情報：
-・profileId：取得したCredential ProfileのID
-・authMethod：変換済みの認証方式
-・credentialData：統合及び編集したCredential Data
-・mapping：Credential Status Webhook等を設定したMapping
+以下の情報を設定する。
+・Credential Profile ID：取得したProfileのID
+・認証方式：walt.id形式に変換した認証方式
+・Credential Data：統合及び編集したCredential Data
+・Mapping：Credential Status Webhook等を設定したMapping
 
-ProfileにselectiveDisclosureが定義されている場合は、その設定をPayloadに含める。
+Credential ProfileにSelective Disclosureが定義されている場合は、その情報を設定する。
 
-issuerDid及びissuerKeyが指定されている場合は、ランタイム上書き用の情報としてPayloadに含める。
+Issuer DID及びIssuer Keyが指定されている場合は、Profileの設定を上書きする情報として設定する。
 
-valueModeはPayloadに指定せず、Issuer2 Serviceのデフォルト値を使用する。","valueModeのデフォルト値：BY_REFERENCE
+Issuer DID及びIssuer Keyが未指定の場合は、Profileの既存設定を使用する。
 
-Issuer2 Service内のCREDENTIAL_OFFER_VALUE_MODESで管理する。"
-"walt.id Issuer2 APIを呼び出し、Credential Offerを作成する。
-
-Issuer2 ServiceのcreateCredentialOfferを呼び出す。
+Credential OfferのValue ModeにはBY_REFERENCEを使用する。","Selective DisclosureはCredential Profileの定義を使用する。"
+"walt.id Issuer2 APIにCredential Offer作成を要求する。
 
 エンドポイント：
 POST /issuer2/credential-offers
 
-リクエストの主な情報：
-・profileId
-・authMethod
-・valueMode：BY_REFERENCE
-・runtimeOverrides：指定されたCredential Data、Mapping及びその他の上書き情報
+リクエストには以下の情報を指定する。
+・Credential Profile ID
+・認証方式
+・Value Mode：BY_REFERENCE
+・Credential Data及びMapping等の上書き情報
 
-レスポンスから以下を取得する。
-・Credential Offer URL（credentialOffer）
-・Offer ID（offerId）
+レスポンスからCredential Offer URL及びOffer IDを取得する。
 
-取得したcredentialOfferをCredential Offer URLとして保持する。
+取得したCredential Offer URLを以降の処理に使用する。
 
-Credential Offer URLを取得できない場合はエラーを返却する。","旧APIの以下の呼び出しは使用しない。
-・POST /openid4vc/jwt/issue
-・POST /openid4vc/sdjwt/issue
-
-JWT VC及びSD-JWT VCは共通のIssuer2 APIで作成する。"
-"Credential Offer Endpoint URLが指定されている場合、Credential Offer Endpoint管理テーブルから対象情報を取得する。
+Credential Offer URLが取得できない場合はエラーを返却する。","JWT VC及びSD-JWT VCは同一のIssuer2 APIで作成する。"
+"Credential Offer Endpoint URLが指定されている場合、Credential Offer Endpoint管理テーブルから該当する情報を取得する。
 
 検索条件：
-・グループID：指定されたgroupId
-・Credential Offer Endpoint URL：指定されたendpointUrl
+・グループID：指定されたグループID
+・Credential Offer Endpoint URL：指定されたEndpoint URL
 
 取得情報：
-・Credential Offer EndpointのURL
-・Credential Offer Endpointの表示名
-
-対象情報が取得できない場合はエラーを返却する。","既存のgetCredentialOfferEndpointsを使用する。
-
-グループIDがallの設定も参照する既存の検索処理を維持する。"
-"Credential Offer Endpoint URLが指定されている場合、発行されたCredential Offer URLのクエリ文字列を取得する。
-
-指定されたCredential Offer Endpoint URLにクエリ文字列を付加し、Credential Offer Endpointを生成する。
-
-生成結果として以下を保持する。
-・Credential Offer Endpointの表示名
 ・Credential Offer Endpoint URL
+・Credential Offer Endpointの表示名
 
-Credential Offer Endpoint URLが指定されていない場合は、Endpointを生成しない。","発行されたCredential Offer URLのクエリ文字列を使用する。
+対象情報が存在しない場合はエラーを返却する。
 
-旧仕様のDRAFT13固有URL構造を前提とした処理は使用しない。"
+Credential Offer Endpoint URLが指定されていない場合は、本処理を実施しない。","グループ共通設定を含む既存の検索条件に従う。"
+"Credential Offer Endpoint URLが指定されている場合、発行されたCredential Offer URLからクエリ文字列を取得する。
+
+取得したクエリ文字列を指定されたCredential Offer Endpoint URLに付加し、Credential Offer Endpointを生成する。
+
+生成結果として以下の情報を保持する。
+・Credential Offer Endpointの表示名
+・Credential Offer Endpoint URL",""
 "追加可能証明書情報テーブルの対象レコードを更新する。
 
 更新条件：
-・追加可能証明書ID：取得したdocId
+・追加可能証明書ID：取得した追加可能証明書ID
 
 更新内容：
-・credential_offer_url：発行されたCredential Offer URL
-・vc_info：Credential Offer作成時に使用したPayloadをJSON文字列に変換した値
-・credential_offer_endpoint：生成されたCredential Offer Endpoint URL
+・Credential Offer URL：発行されたCredential Offer URL
+・証明書情報：Credential Offer作成時に指定したリクエスト情報をJSON文字列に変換した値
+・Credential Offer Endpoint：生成したCredential Offer Endpoint URL
 
-Endpointが生成されていない場合はnullを設定する。","テーブル：add_cert"
-"リクエストで指定された対象者ごとに、追加可能証明書対象者情報テーブルへ登録する。
+Credential Offer Endpointが生成されていない場合はnullを設定する。","テーブル：add_cert"
+"リクエストで指定された対象者ごとに、追加可能証明書対象者情報テーブルに情報を登録する。
 
 登録情報：
-・追加可能証明書ID：取得したdocId
-・グループID：指定されたgroupId
+・追加可能証明書ID：取得した追加可能証明書ID
+・グループID：指定されたグループID
 ・ユーザID：指定された対象者ID
 
-対象者が複数存在する場合は、対象者ごとに登録する。","テーブル：add_cert_user"
+対象者が複数の場合は、対象者ごとに登録する。","テーブル：add_cert_user"
 "DBトランザクションを終了する。","★トランザクション終了"
-"発行結果を設定し、成功レスポンスを返却する。
+"発行結果として以下の情報を設定し、成功レスポンスを返却する。
 
-返却情報：
-・url：発行されたCredential Offer URL
-・docId：追加可能証明書ID
-・endpoint：Credential Offer Endpoint情報",""
-"処理中に例外が発生した場合は、エラーログを出力し、例外を上位処理に通知する。
+・Credential Offer URL
+・追加可能証明書ID
+・Credential Offer Endpoint情報",""
+"処理中にエラーが発生した場合は、エラー情報をログに出力し、上位処理に通知する。
 
-DBトランザクション内の処理でエラーが発生した場合は、DBトランザクションをロールバックする。
+DBトランザクション中にエラーが発生した場合は、DBの登録・更新処理をロールバックする。
 
-なお、Issuer2 APIによって作成済みのCredential Offerは、Cloud WalletのDBロールバック対象外とする。","例外発生時のエラーレスポンス変換は既存の共通エラー処理に従う。"
+ただし、walt.id Issuer2 APIで作成済みのCredential OfferはDBロールバックの対象外とする。","エラーレスポンスは共通エラー処理に従う。"
