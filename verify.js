@@ -1,10 +1,8 @@
-/**
- * Credential OfferのValue Mode
- */
-const CREDENTIAL_OFFER_VALUE_MODES = {
-    BY_REFERENCE: 'BY_REFERENCE'
-}
+// Issuerの存在を確認する。
+await checkIssuerExists(groupId)
 
-valueMode = CREDENTIAL_OFFER_VALUE_MODES.BY_REFERENCE
-
-CREDENTIAL_OFFER_VALUE_MODES
+// 設定ファイルからIssuer情報を取得する。
+const {
+    issuerKey = null,
+    issuerDid = null
+} = defaultIssuerInfo || {}
