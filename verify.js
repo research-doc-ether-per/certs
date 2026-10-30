@@ -11,6 +11,41 @@ const isPlainObject = (value) => {
 }
 
 /**
+ * JSONオブジェクトをコピーする。
+ */
+const cloneJson = (value) => {
+    if (value === undefined) {
+        return undefined
+    }
+
+    return JSON.parse(JSON.stringify(value))
+}
+
+/**
+ * Credential Dataを再帰的に統合する。
+ */
+const mergeCredentialData = (base = {}, overrides = {}) => {
+    const result = cloneJson(base || {})
+
+    Object.entries(overrides || {}).forEach(([key, value]) => {
+        if (value === undefined) {
+            return
+        }
+
+        if (
+            isPlainObject(value) &&
+            isPlainObject(result[key])
+        ) {
+            result[key] = mergeCredentialData(result[key], value)
+        } else {
+            result[key] = cloneJson(value)
+        }
+    })
+
+    return result
+}
+
+/**
  * Credential Dataを統合する。
  */
 const mergeCredentialData = (base = {}, overrides = {}) => {
