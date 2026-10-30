@@ -1,3 +1,5 @@
+const { v4: uuid } = require('uuid')
+const { URL } = require('url')
 
 /**
  * オブジェクトかどうかを確認する。
