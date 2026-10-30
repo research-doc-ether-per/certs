@@ -1,3 +1,18 @@
+const prepareCredentialOfferPayload = ({
+    profile,
+    credentialMetadata,
+    authMethod,
+    offerData,
+    issuanceDate = null,
+    expirationDate = null,
+    expirationDateSpecified = false,
+    docId = null,
+    type = null,
+    imageData = null,
+    issuerDid = null,
+    issuerKey = null
+}) => {
+    
 // 証明書画像を設定する。
 if (Array.isArray(imagePath) && imagePath.length > 0) {
     const requestImage = getValueByPath(
