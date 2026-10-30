@@ -1,13 +1,4 @@
-// Status Listが未登録の場合のみ登録する。
-if (existsStatus === false) {
-    if (!statusListUrl) {
-        throw new Error('Status List URL is missing.')
-    }
+issuer: issuerDid || profile.issuerDid,
 
-    await registerStatusList({
-        client,
-        groupId,
-        type: credentialType,
-        statusListUrl
-    })
-}
+
+    ・Issuer DID：設定ファイルから取得したデフォルトIssuer DID。未指定の場合は、Credential Profileに定義されたIssuer DID
