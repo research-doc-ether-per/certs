@@ -1,2 +1,3 @@
-
+Format定義テーブルのfieldsはJSON文字列で保存されているため、DBに新しいカラムやテーブルを追加する必要はなく、既存のfieldsの内容を変更するだけで対応できると考えています。
+具体的には、CredentialSubject以外のフィールド（issuanceDateやexpirationDateなど）もfieldsに含めて定義するイメージです。
 例えば、Format定義テーブルのfieldsを以下のような形式で定義するイメージです。
