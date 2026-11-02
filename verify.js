@@ -1,5 +1,3 @@
-現在、以下の画面では、各Webサーバーのconfigに定義されている固定キーを使って、項目の判定や除外処理を行っています。
-- issuer-web：Credential発行画面
-- wallet-web：Credential詳細画面、取り込み画面
-- verifier-web：提示されたCredentialの詳細画面
-今回、Format定義テーブルのfieldsにこれらの項目も含めて定義すれば、各Webサーバーのconfigで固定キーを個別に定義する必要がなくなり、処理を共通化できるのではないかと考えています。
+各Webサーバーのconfigに定義されている固定キー（certName、type、issuanceDate、expirationDate、docId、SD関連の項目など）も、Format定義テーブルのfieldsに含めたいと考えています。
+また、型定義だけでなく、各フィールドに表示設定を持たせることで、画面ごとに表示する項目を制御できるようにするイメージです。
+そうすることで、各画面のconfigで固定キーを個別に定義して判定する必要がなくなり、処理を共通化できるのではないかと考えています。
