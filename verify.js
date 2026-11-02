@@ -1,20 +1,9 @@
-gsettings set org.gnome.desktop.screensaver lock-enabled false
-gsettings set org.gnome.desktop.session idle-delay 0
+lspci -nnk | grep -A 4 -iE 'VGA|Display'
 
-sudo dpkg --audit
+echo $XDG_SESSION_TYPE
 
-sudo apt-get check
+sudo journalctl -b -k --no-pager | grep -iE 'vmwgfx|vboxvideo|drm.*error' | tail -50
 
-cat /etc/os-release
+systemctl status gdm3 --no-pager
 
-
-sudo apt update
-apt list --upgradable
-
-sudo apt upgrade
-
-systemctl --failed
-
-
-journalctl -b -1 -p err --no-pager | tail -100
-
+loginctl list-sessions
