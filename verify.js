@@ -1,3 +1,5 @@
-Format定義テーブルのfieldsはJSON文字列で保存されているため、DBに新しいカラムやテーブルを追加する必要はなく、既存のfieldsの内容を変更するだけで対応できると考えています。
-具体的には、CredentialSubject以外のフィールド（issuanceDateやexpirationDateなど）もfieldsに含めて定義するイメージです。
-例えば、Format定義テーブルのfieldsを以下のような形式で定義するイメージです。
+現在、以下の画面では、各Webサーバーのconfigに定義されている固定キーを使って、項目の判定や除外処理を行っています。
+- issuer-web：Credential発行画面
+- wallet-web：Credential詳細画面、取り込み画面
+- verifier-web：提示されたCredentialの詳細画面
+今回、Format定義テーブルのfieldsにこれらの項目も含めて定義すれば、各Webサーバーのconfigで固定キーを個別に定義する必要がなくなり、処理を共通化できるのではないかと考えています。
