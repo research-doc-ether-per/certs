@@ -1,9 +1,5 @@
-lspci -nnk | grep -A 4 -iE 'VGA|Display'
+sudo journalctl -b -1 -p warning --no-pager | tail -100
 
-echo $XDG_SESSION_TYPE
+systemd-detect-virt
 
-sudo journalctl -b -k --no-pager | grep -iE 'vmwgfx|vboxvideo|drm.*error' | tail -50
-
-systemctl status gdm3 --no-pager
-
-loginctl list-sessions
+lspci -nnk | grep -A 5 -iE 'VGA|Display'
