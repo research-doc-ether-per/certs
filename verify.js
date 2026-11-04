@@ -7,12 +7,22 @@
 
 また、walt.id v1.0.0 の VctIntegrityPolicy.kt では、以下のエラーが定義されています。
 
-| Reason | エラーメッセージ | 内容 |
-|---|---|---|
-| MISSING | vct#integrity claim is missing | vct#integrity が存在しない |
-| MALFORMED | vct#integrity is not a string primitive / does not start with a supported prefix | 値の型または形式が不正 |
-| MISSING_VCT | Cannot verify vct#integrity: vct claim is missing | vct が存在しない |
-| FETCH_FAILED | Failed to fetch Type Metadata from vct URL | Metadata の取得に失敗 |
-| VALUE_MISMATCH | vct#integrity hash mismatch for vct=...: stored=..., computed=... | ハッシュ値が不一致 |
+walt.id v1.0.0 の VctIntegrityPolicy.kt では、以下の5種類のエラーが定義されています。
+① MISSING
+- エラーメッセージ：vct#integrity claim is missing
+- 内容：vct#integrity が存在しない場合
+② MALFORMED
+- エラーメッセージ：vct#integrity is not a string primitive または does not start with a supported prefix
+- 内容：vct#integrity の値の型または形式が不正な場合
+③ MISSING_VCT
+- エラーメッセージ：Cannot verify vct#integrity: vct claim is missing
+- 内容：vct が存在しない場合
+④ FETCH_FAILED
+- エラーメッセージ：Failed to fetch Type Metadata from vct URL
+- 内容：VCT Metadata の取得に失敗した場合
+⑤ VALUE_MISMATCH
+- エラーメッセージ：vct#integrity hash mismatch for vct=...: stored=..., computed=...
+- 内容：vct#integrity と取得した VCT Metadata のハッシュ値が一致しない場合
+
 
 参考：https://github.com/walt-id/waltid-identity/blob/v1.0.0/waltid-libraries/credentials/waltid-verification-policies2/src/commonMain/kotlin/id/walt/policies2/vc/policies/VctIntegrityPolicy.kt
