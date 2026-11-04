@@ -1,5 +1,15 @@
--- * Credential Offer URLの有効期間（秒）を追加
-ALTER TABLE add_cert ADD COLUMN credential_offer_expiration_seconds INTEGER DEFAULT NULL;
+credentialOfferExpirationSeconds
+Credential Offer URLの有効期間（秒）を指定する。未指定の場合は、walt.id Issuer2のデフォルト設定を使用する。
+integer
 
 
-docker exec -i wallet-db psql -U postgres -d walletdb -v ON_ERROR_STOP=1 < docker/wallet-db/initdb/03-alter.sql
+・Credential Offer URLの有効期間（秒）（credentialOfferExpirationSeconds）
+
+
+・Credential Offer URLの有効期間（秒）：リクエストで指定された有効期間。未指定の場合はnull
+
+
+Credential Offer URLの有効期間（秒）が指定されている場合は、expiresInSecondsに設定する。
+未指定の場合は、expiresInSecondsを設定しない。
+
+・expiresInSeconds：指定されたCredential Offer URLの有効期間（秒）。未指定の場合は省略する。
