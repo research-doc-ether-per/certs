@@ -1,58 +1,70 @@
 
-/**
- * fieldsの変換処理。
- */
-const transform = async (value, context) => {
-    logger.debug('*** transform start ***')
+const fields = value.fields || []
 
-    try {
-        logger.debug('target : ', context)
-        logger.debug('value : ', value)
+const credentialSubject = {}
 
-        const config = migrationConfig.fields.values
+for (const item of fields) {
+    logger.debug('item : ', item)
 
-        // 元のデータを複製する
-        const result = JSON.parse(JSON.stringify(value))
+    const { name, ...fieldInfo } = item
 
-        // credentialSubjectの各項目に表示設定を追加する
-        const credentialSubject = result.credentialSubject
-
-        if (
-            credentialSubject &&
-            typeof credentialSubject === 'object' &&
-            !Array.isArray(credentialSubject)
-        ) {
-            for (const [key, field] of Object.entries(credentialSubject)) {
-                if (
-                    !field ||
-                    typeof field !== 'object' ||
-                    Array.isArray(field)
-                ) {
-                    continue
-                }
-
-                credentialSubject[key] = {
-                    ...config.credentialSubject,
-                    ...field
-                }
-            }
-        }
-
-        // issuanceDateとexpirationDateを追加する
-        for (const key of ['issuanceDate', 'expirationDate']) {
-            if (!Object.prototype.hasOwnProperty.call(result, key)) {
-                result[key] = JSON.parse(JSON.stringify(config[key]))
-            }
-        }
-
-        logger.debug('result : ', result)
-
-        return result
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** transform end ***')
+    const targetItem = {
+        ...fieldInfo,
+        ...config.fields.values.credentialSubject
     }
+
+    credentialSubject[name] = targetItem
 }
+
+const tempFields = {
+    credentialSubject,
+    issuanceDate: config.fields.values.issuanceDate,
+    expirationDate: config.fields.values.expirationDate
+}
+
+logger.debug('tempFields : ', tempFields)
+
+// 変換後のfieldsを設定する
+const result = {
+    ...value,
+    fields: tempFields
+}
+
+logger.debug('result : ', result)
+
+return result
+
+const fields = value.fields || []
+
+const credentialSubject = {}
+
+for (const item of fields) {
+    logger.debug('item : ', item)
+
+    const { name, ...fieldInfo } = item
+
+    const targetItem = {
+        ...fieldInfo,
+        ...config.fields.values.credentialSubject
+    }
+
+    credentialSubject[name] = targetItem
+}
+
+const tempFields = {
+    credentialSubject,
+    issuanceDate: config.fields.values.issuanceDate,
+    expirationDate: config.fields.values.expirationDate
+}
+
+logger.debug('tempFields : ', tempFields)
+
+// 変換後のfieldsを設定する
+const result = {
+    ...value,
+    fields: tempFields
+}
+
+logger.debug('result : ', result)
+
+return result
