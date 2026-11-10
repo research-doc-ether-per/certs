@@ -1,6 +1,10 @@
-account_idには、walt.idのAccount IDを設定する。
-waltid_walletには、walt.idのWallet IDを設定する。
-将来的な1 Account対複数Walletの構成に対応するため、Walletの関連情報はaccount_walletsテーブルで管理する。
+SmartLITA Walletで管理するユーザーと、walt.idのAccountおよびWalletの関連情報を管理する。
+
+- OIDCログインの場合、`user_id`にはAccess Tokenの`sub`を設定する。
+- メールアドレスによるログインの場合、`user_id`にはメールアドレスを設定する。
+- `account_id`には、walt.idのAccount IDを設定する。
+- `waltid_wallet`には、walt.idのWallet IDを設定する。
+- 将来的な1 Account対複数Walletの構成に対応するため、Walletの関連情報は`account_wallets`テーブルで管理する。
 
 アカウント・ウォレット関連テーブル
 account_wallets
