@@ -75,15 +75,21 @@ const getText = (row, ...names) => {
         logger.debug('names : ', JSON.stringify(names))
 
         for (const name of names) {
-            if (Object.prototype.hasOwnProperty.call(row, name)) {
-                const value = row[name]
-                const result = value === null || value === undefined ? null : String(value)
-
-                // 個人情報を含む可能性があるため、値自体は出力しない
-                logger.debug('matched column : ', name)
-
-                return result
+            if (!Object.prototype.hasOwnProperty.call(row, name)) {
+                continue
             }
+
+            const value = row[name]
+            if (value === null || value === undefined) {
+                continue
+            }
+
+            const result = String(value)
+
+            // 個人情報を含む可能性があるため、値自体は出力しない
+            logger.debug('matched column : ', name)
+
+            return result
         }
 
         logger.debug('matched column : none')
@@ -103,7 +109,7 @@ const readSource = async (table, columns) => {
     try {
         const allowed = {
             accounts: ['id'],
-            oidclogins: ['accountId', 'oidcId'],
+            oidclogins: ['accountId', 'account_id', 'oidcId', 'oidc_id'],
             account_wallet_mapping: ['id', 'wallet', 'added_on', 'addedOn'],
             wallets: ['id', 'name'],
             wallet_dids: ['wallet', 'did', 'alias', 'createdOn', 'created_on']
@@ -114,7 +120,44 @@ const readSource = async (table, columns) => {
         logger.debug('table : ', table)
         logger.debug('columns : ', JSON.stringify(columns))
 
-        const selected = columns.map(quoteId).join(', ')
+        // 日時カラムはDate型に変換せず、PostgreSQLの文字列表現で取得する
+        const timestampColumns = {
+            account_wallet_mapping: ['added_on', 'addedOn'],
+            wallet_dids: ['created_on', 'createdOn']
+        }
+
+        // 移行先はTIMESTAMP WITHOUT TIME ZONEのため、時刻の意味が変わる型は拒否する
+        const dateColumns = columns.filter(column => timestampColumns[table]?.includes(column))
+        if (dateColumns.length > 0) {
+            const metadata = await waltId.query(
+                `
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = $1 AND table_name = $2 AND column_name = ANY($3::text[])
+                `,
+                [sourceSchemaName, table, dateColumns]
+            )
+
+            for (const row of metadata.rows) {
+                if (row.data_type !== 'timestamp without time zone') {
+                    throw new Error(`Unsupported timestamp type: ${table}.${row.column_name} (${row.data_type})`)
+                }
+            }
+            if (metadata.rows.length !== dateColumns.length) {
+                throw new Error(`Timestamp column metadata not found: ${table}`)
+            }
+        }
+
+        const selected = columns.map(column => {
+            const quoted = quoteId(column)
+
+            if (timestampColumns[table]?.includes(column)) {
+                return `${quoted}::text AS ${quoted}`
+            }
+
+            return quoted
+        }).join(', ')
+
         const response = await waltId.query(`SELECT ${selected} FROM ${sourceSchema}.${quoteId(table)}`)
         const result = response.rows
 
@@ -210,9 +253,9 @@ const prepareSource = async () => {
     logger.debug('*** prepareSource start ***')
     try {
         const accounts = await selectColumns('accounts', ['id'])
-        const mappings = await selectColumns('account_wallet_mapping', ['id', 'wallet'], [], ['added_on', 'addedOn'])
+        const mappings = await selectColumns('account_wallet_mapping', ['id', 'wallet'], [['added_on', 'addedOn']])
         const wallets = await selectColumns('wallets', ['id', 'name'])
-        const didRows = await selectColumns('wallet_dids', ['wallet', 'did', 'alias'], [], ['createdOn', 'created_on'])
+        const didRows = await selectColumns('wallet_dids', ['wallet', 'did', 'alias'], [['createdOn', 'created_on']])
         const logins = await selectColumns('oidclogins', [], [['accountId', 'account_id'], ['oidcId', 'oidc_id']])
 
         const accountIds = new Set(accounts.map((row) => getText(row, 'id')))
@@ -495,6 +538,10 @@ const migrate = async () => {
             `, [item.walletId, item.did, item.alias, item.createdOn])
         }
 
+        // COMMIT前に移行後の構造と参照整合性を検証する
+        await verify(false)
+        console.log('PRE-COMMIT CHECK: SUCCESS')
+
         const summary = {
             privWallets: assignments.length,
             accountIdBackfilled: assignments.filter((item) => item.needsUpdate).length,
@@ -529,8 +576,67 @@ const migrate = async () => {
     }
 }
 
+// 新規テーブルのカラム定義と主キーを確認する
+const verifyTableStructure = async (table, expectedColumns, expectedPrimaryKey) => {
+    logger.debug('*** verifyTableStructure start ***')
+
+    try {
+        logger.debug('table : ', table)
+
+        const response = await cloudWallet.query(
+            `
+            SELECT column_name, data_type, character_maximum_length, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = $1 AND table_name = $2
+            `,
+            [targetSchemaName, table]
+        )
+
+        const columns = Object.fromEntries(response.rows.map(row => [row.column_name, row]))
+        logger.debug('columns : ', JSON.stringify(columns, null, 2))
+
+        for (const [name, expected] of Object.entries(expectedColumns)) {
+            const actual = columns[name]
+            if (!actual ||
+                actual.data_type !== expected.dataType ||
+                (expected.maxLength !== undefined && actual.character_maximum_length !== expected.maxLength) ||
+                actual.is_nullable !== expected.nullable) {
+                throw new Error(`${table}.${name} definition mismatch`)
+            }
+        }
+
+        const pkResponse = await cloudWallet.query(
+            `
+            SELECT json_agg(a.attname ORDER BY k.ord) AS columns
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            JOIN unnest(c.conkey) WITH ORDINALITY k(attnum, ord) ON TRUE
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+            WHERE n.nspname = $1 AND t.relname = $2 AND c.contype = 'p'
+            GROUP BY c.conname
+            `,
+            [targetSchemaName, table]
+        )
+
+        if (pkResponse.rows.length !== 1 ||
+            JSON.stringify(pkResponse.rows[0].columns) !== JSON.stringify(expectedPrimaryKey)) {
+            throw new Error(`${table} primary key mismatch`)
+        }
+
+        logger.debug('primary key : ', JSON.stringify(pkResponse.rows[0].columns))
+        return true
+    } catch (error) {
+        logger.error('error.message: ', error.message)
+        logger.error('error.stack: ', error.stack)
+        throw error
+    } finally {
+        logger.debug('*** verifyTableStructure end ***')
+    }
+}
+
 // 移行後のテーブル構造とデータを確認する（新仕様の1:Nは拒否しない）
-const verify = async () => {
+const verify = async (logSuccess = true) => {
     logger.debug('*** verify start ***')
     try {
         const pk = await getPrimaryKey()
@@ -556,6 +662,20 @@ const verify = async () => {
             throw new Error('priv_wallets.account_id definition mismatch')
         }
 
+        await verifyTableStructure('account_wallets', {
+            account_id: { dataType: 'character varying', maxLength: 128, nullable: 'NO' },
+            wallet_id: { dataType: 'character varying', maxLength: 128, nullable: 'NO' },
+            wallet_name: { dataType: 'character varying', maxLength: 128, nullable: 'YES' },
+            added_on: { dataType: 'timestamp without time zone', nullable: 'YES' }
+        }, ['account_id', 'wallet_id'])
+
+        await verifyTableStructure('did_aliases', {
+            wallet_id: { dataType: 'character varying', maxLength: 128, nullable: 'NO' },
+            did: { dataType: 'character varying', maxLength: 1024, nullable: 'NO' },
+            alias: { dataType: 'character varying', maxLength: 1024, nullable: 'NO' },
+            created_on: { dataType: 'timestamp without time zone', nullable: 'YES' }
+        }, ['wallet_id', 'did'])
+
         // 移行元から既存値を再比較する処理ではなく、移行先の参照整合性を確認する
         const invalid = await cloudWallet.query(`
             SELECT p.user_id, p.account_id, p.waltid_wallet
@@ -578,7 +698,7 @@ const verify = async () => {
             logger.debug(`VERIFY ${table} : `, count.rows[0].count)
             console.log(`VERIFY ${table}: ${count.rows[0].count} rows`)
         }
-        console.log('Migration verification: SUCCESS')
+        if (logSuccess) console.log('Migration verification: SUCCESS')
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
@@ -604,12 +724,16 @@ const main = async () => {
             (command === 'verify' && (apply || process.argv.includes('--dry-run')))) {
             throw new Error('Usage: node migrate_wallet_data.js migrate [--dry-run | --apply] [--print-data] | verify [--print-data]')
         }
-        await waltId.connect()
-        waltIdConnected = true
         await cloudWallet.connect()
         cloudWalletConnected = true
-        if (command === 'migrate') await migrate()
-        else await verify()
+
+        if (command === 'migrate') {
+            await waltId.connect()
+            waltIdConnected = true
+            await migrate()
+        } else {
+            await verify()
+        }
     } catch (error) {
         logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
