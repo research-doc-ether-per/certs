@@ -1,3 +1,4 @@
+
 'use strict'
 
 const fs = require('fs')
@@ -19,103 +20,69 @@ const waltId = new Client(dbConfig.waltId)
 
 const command = process.argv[2]
 const apply = process.argv.includes('--apply')
-const dryRun = process.argv.includes('--dry-run') || !apply
+const dryRun = !apply
 const printData = process.argv.includes('--print-data')
 
 const sourceSchemaName = dbConfig.waltId.schema || 'public'
 const targetSchemaName = dbConfig.cloudWallet.schema || 'public'
 
 /**
- * SQL 識別子を検証し、ダブルクォートで囲んで返す。
+ * SQL識別子を検証してクォートする。
  *
- * @param {string} value - SQL 識別子。
- * @returns {string} クォート済みの SQL 識別子。
- * @throws {Error} SQL 識別子が不正な場合。
+ * @param {string} value - SQL識別子。
+ * @returns {string} クォート済み識別子。
  */
 const quoteId = (value) => {
-    logger.debug('*** quoteId start ***')
-    try {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-            throw new Error(`Invalid SQL identifier: ${value}`)
-        }
-        return `"${value}"`
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** quoteId end ***')
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+        throw new Error(`Invalid SQL identifier: ${value}`)
     }
+    return `"${value}"`
 }
 
 const sourceSchema = quoteId(sourceSchemaName)
 const targetSchema = quoteId(targetSchemaName)
 
 /**
- * --print-data 指定時にデータを標準出力へ表示する。
+ * 指定時のみデータを表示する。
  *
- * @param {string} label - データの識別名。
- * @param {*} value - 表示対象データ。
+ * @param {string} label - 表示名。
+ * @param {*} value - 表示データ。
  * @returns {void}
  */
 const showData = (label, value) => {
-    logger.debug('*** showData start ***')
-    try {
-        if (printData) {
-            console.log(
-                `[DATA] ${label}: ${JSON.stringify(value, null, 2)}`
-            )
-        }
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** showData end ***')
+    if (printData) {
+        console.log(
+            `[DATA] ${label}: ${JSON.stringify(value, null, 2)}`
+        )
     }
 }
 
 /**
- * 行データから指定カラムの値を文字列として取得する。
- * 複数のカラム名が指定された場合、最初の非 null 値を返す。
+ * 行データから文字列を取得する。
  *
- * @param {Object} row - DB の行データ。
- * @param {...string} names - 取得対象カラム名。
- * @returns {string|null} 取得した文字列。
+ * @param {Object} row - 行データ。
+ * @param {...string} names - カラム名。
+ * @returns {string|null} 文字列またはnull。
  */
 const getText = (row, ...names) => {
-    logger.debug('*** getText start ***')
-    try {
-        for (const name of names) {
-            if (!Object.prototype.hasOwnProperty.call(row, name)) {
-                continue
-            }
-            const value = row[name]
-            if (value !== null && value !== undefined) {
-                return String(value)
-            }
+    for (const name of names) {
+        if (row[name] !== null && row[name] !== undefined) {
+            return String(row[name])
         }
-        return null
-    } catch (error) {
-        logger.error('error.message: ', error.message)
-        logger.error('error.stack: ', error.stack)
-        throw error
-    } finally {
-        logger.debug('*** getText end ***')
     }
+    return null
 }
 
 /**
- * walt.id DB の指定テーブルからカラム名一覧を取得する。
+ * 移行元テーブルのカラム一覧を取得する。
  *
- * @param {string} table - 対象テーブル名。
- * @returns {Promise<Set<string>>} カラム名の集合。
- * @throws {Error} DB からの取得に失敗した場合。
+ * @param {string} table - テーブル名。
+ * @returns {Promise<Set<string>>} カラム名一覧。
  */
 const getSourceColumns = async (table) => {
     logger.debug('*** getSourceColumns start ***')
     try {
-        const response = await waltId.query(
+        const result = await waltId.query(
             `
             SELECT column_name
             FROM information_schema.columns
@@ -124,9 +91,8 @@ const getSourceColumns = async (table) => {
             `,
             [sourceSchemaName, table]
         )
-        return new Set(response.rows.map(row => row.column_name))
+        return new Set(result.rows.map(row => row.column_name))
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -135,17 +101,16 @@ const getSourceColumns = async (table) => {
 }
 
 /**
- * walt.id DB の指定カラムのデータ型を取得する。
+ * 移行元カラムのデータ型を取得する。
  *
- * @param {string} table - 対象テーブル名。
- * @param {string} column - 対象カラム名。
- * @returns {Promise<Object|null>} カラムの型情報。
- * @throws {Error} DB からの取得に失敗した場合。
+ * @param {string} table - テーブル名。
+ * @param {string} column - カラム名。
+ * @returns {Promise<Object|null>} データ型情報。
  */
 const getSourceColumnType = async (table, column) => {
     logger.debug('*** getSourceColumnType start ***')
     try {
-        const response = await waltId.query(
+        const result = await waltId.query(
             `
             SELECT data_type, udt_name
             FROM information_schema.columns
@@ -155,9 +120,8 @@ const getSourceColumnType = async (table, column) => {
             `,
             [sourceSchemaName, table, column]
         )
-        return response.rows[0] || null
+        return result.rows[0] || null
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -166,28 +130,23 @@ const getSourceColumnType = async (table, column) => {
 }
 
 /**
- * 移行元データを取得するための SELECT 句を生成する。
- * 日時カラムは文字列に変換し、タイムゾーン変換を防止する。
+ * 移行元のSELECT句を生成する。
+ * 日時は文字列として取得し、Node.js側での変換を防ぐ。
  *
- * @param {string} table - 対象テーブル名。
- * @param {string[]} columns - 取得対象カラム名。
- * @returns {Promise<string>} SELECT 句。
- * @throws {Error} 未対応の日時型が存在する場合。
+ * @param {string} table - テーブル名。
+ * @param {string[]} columns - カラム名一覧。
+ * @returns {Promise<string>} SELECT句。
  */
 const createSourceSelect = async (table, columns) => {
     logger.debug('*** createSourceSelect start ***')
     try {
-        const timestampColumns = {
-            wallets: ['created_on', 'createdOn'],
-            wallet_dids: ['created_on', 'createdOn']
-        }
-
         const selected = []
+        const timestamps = ['created_on', 'createdOn']
 
         for (const column of columns) {
             const quoted = quoteId(column)
 
-            if (timestampColumns[table]?.includes(column)) {
+            if (timestamps.includes(column)) {
                 const type = await getSourceColumnType(table, column)
 
                 if (!type ||
@@ -201,10 +160,8 @@ const createSourceSelect = async (table, columns) => {
                 selected.push(quoted)
             }
         }
-
         return selected.join(', ')
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -213,21 +170,21 @@ const createSourceSelect = async (table, columns) => {
 }
 
 /**
- * walt.id DB から Wallet または DID データを取得する。
- * 許可されたテーブルとカラムのみ参照する。
+ * 移行元データを取得する。
  *
- * @param {string} table - 対象テーブル名。
- * @param {string[]} columns - 取得対象カラム名。
- * @returns {Promise<Object[]>} 取得した行データ。
- * @throws {Error} 未対応のテーブル・カラムが指定された場合。
+ * @param {string} table - テーブル名。
+ * @param {string[]} columns - カラム名一覧。
+ * @returns {Promise<Object[]>} 取得データ。
  */
 const readSource = async (table, columns) => {
     logger.debug('*** readSource start ***')
     try {
         const allowed = {
-            wallets: ['id', 'name', 'created_on', 'createdOn'],
+            wallets: [
+                'id', 'name', 'created_on', 'createdOn'
+            ],
             wallet_dids: [
-                'wallet', 'did', 'keyId', 'default', 'alias',
+                'wallet', 'did', 'alias', 'keyId', 'default',
                 'created_on', 'createdOn'
             ]
         }
@@ -238,16 +195,14 @@ const readSource = async (table, columns) => {
         }
 
         const selected = await createSourceSelect(table, columns)
-        const response = await waltId.query(
+        const result = await waltId.query(
             `SELECT ${selected} FROM ${sourceSchema}.${quoteId(table)}`
         )
 
-        logger.debug('result.length : ', response.rows.length)
-        showData(`readSource ${table}`, response.rows)
-
-        return response.rows
+        logger.debug('result.length: ', result.rows.length)
+        showData(`readSource ${table}`, result.rows)
+        return result.rows
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -256,14 +211,13 @@ const readSource = async (table, columns) => {
 }
 
 /**
- * 必須・代替・任意カラムを確認し、移行元データを取得する。
+ * 必須カラムと日時カラムを確認して取得する。
  *
- * @param {string} table - 対象テーブル名。
+ * @param {string} table - テーブル名。
  * @param {string[]} required - 必須カラム。
- * @param {string[][]} [alternatives=[]] - 代替カラム候補。
- * @param {string[]} [optional=[]] - 任意カラム。
- * @returns {Promise<Object[]>} 取得した行データ。
- * @throws {Error} 必須カラムが存在しない場合。
+ * @param {string[][]} alternatives - 代替カラム候補。
+ * @param {string[]} optional - 任意カラム。
+ * @returns {Promise<Object[]>} 取得データ。
  */
 const selectColumns = async (
     table, required, alternatives = [], optional = []
@@ -274,7 +228,9 @@ const selectColumns = async (
 
         for (const column of required) {
             if (!columns.has(column)) {
-                throw new Error(`Missing source column: ${table}.${column}`)
+                throw new Error(
+                    `Missing source column: ${table}.${column}`
+                )
             }
         }
 
@@ -283,7 +239,7 @@ const selectColumns = async (
             const found = group.find(c => columns.has(c))
             if (!found) {
                 throw new Error(
-                    `Missing source column: ${table}.${group.join(' / ')}`
+                    `Missing source column: ${table}.${group.join('/')}`
                 )
             }
             extra.push(found)
@@ -295,7 +251,6 @@ const selectColumns = async (
             ...optional.filter(c => columns.has(c))
         ])
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -304,30 +259,32 @@ const selectColumns = async (
 }
 
 /**
- * walt.id DB の Wallet/DID データを読み込み、移行用データを生成する。
- * Wallet ID と DID の重複、および参照整合性を検証する。
+ * WalletおよびDIDの移行元データを準備する。
+ * DIDのKey IDとdefaultはDID単位で保持する。
  *
- * @returns {Promise<Object>} Wallet ID、Wallet エイリアス、
- * DID エイリアスの移行用データ。
- * @throws {Error} データの欠損・重複・参照不整合がある場合。
+ * @returns {Promise<Object>} 移行元データ。
  */
 const prepareSource = async () => {
     logger.debug('*** prepareSource start ***')
     try {
         const wallets = await selectColumns(
-            'wallets', ['id', 'name'], [],
-            ['created_on', 'createdOn']
-        )
-        const didRows = await selectColumns(
-            'wallet_dids', ['wallet', 'did', 'keyId', 'default', 'alias'], [],
+            'wallets',
+            ['id', 'name'],
+            [],
             ['created_on', 'createdOn']
         )
 
-        const walletAliases = []
-        const didAliases = []
+        const didRows = await selectColumns(
+            'wallet_dids',
+            ['wallet', 'did', 'alias', 'keyId', 'default'],
+            [],
+            ['created_on', 'createdOn']
+        )
+
         const walletIds = new Set()
         const didKeys = new Set()
-        const walletAliasById = new Map()
+        const walletAliases = []
+        const didAliases = []
 
         for (const row of wallets) {
             const walletId = getText(row, 'id')
@@ -335,52 +292,60 @@ const prepareSource = async () => {
             const createdOn = getText(row, 'created_on', 'createdOn')
 
             if (!walletId || walletIds.has(walletId)) {
-                throw new Error(`Invalid or duplicate wallet ID: ${walletId}`)
+                throw new Error(
+                    `Invalid or duplicate wallet ID: ${walletId}`
+                )
             }
 
             walletIds.add(walletId)
-            const item = {
-                walletId, walletName, createdOn, default: false
-            }
-            walletAliases.push(item)
-            walletAliasById.set(walletId, item)
+            walletAliases.push({
+                walletId,
+                walletName,
+                createdOn
+            })
         }
 
         for (const row of didRows) {
             const walletId = getText(row, 'wallet')
             const did = getText(row, 'did')
+            const alias = getText(row, 'alias')
             const keyId = getText(row, 'keyId')
             const defaultValue = row.default
-            const alias = getText(row, 'alias')
             const createdOn = getText(row, 'created_on', 'createdOn')
+
+            if (!walletId || !did || !keyId || alias === null) {
+                throw new Error(
+                    'wallet_dids.wallet/did/alias/keyId is missing'
+                )
+            }
 
             if (typeof defaultValue !== 'boolean') {
                 throw new Error(
                     `Invalid wallet_dids.default: ${walletId}, ${did}`
                 )
             }
-            if (!walletId || !did || !keyId || alias === null) {
-                throw new Error(
-                    'wallet_dids.wallet/did/keyId/alias is missing'
-                )
-            }
+
             if (!walletIds.has(walletId)) {
-                throw new Error(`DID wallet not found: ${walletId}`)
+                throw new Error(
+                    `DID wallet not found: ${walletId}`
+                )
             }
 
             const key = JSON.stringify([walletId, did])
             if (didKeys.has(key)) {
-                throw new Error(`Duplicate wallet_dids: ${key}`)
+                throw new Error(
+                    `Duplicate wallet_dids: ${key}`
+                )
             }
 
             didKeys.add(key)
-
-            if (defaultValue) {
-                walletAliasById.get(walletId).default = true
-            }
-
             didAliases.push({
-                walletId, did, keyId, alias, createdOn
+                walletId,
+                did,
+                alias,
+                keyId,
+                default: defaultValue,
+                createdOn
             })
         }
 
@@ -394,7 +359,6 @@ const prepareSource = async () => {
 
         return { walletIds, walletAliases, didAliases }
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -403,16 +367,15 @@ const prepareSource = async () => {
 }
 
 /**
- * Cloud Wallet の priv_wallets と walt.id の Wallet ID を照合する。
+ * priv_walletsのWallet IDと移行元データを照合する。
  *
- * @param {Set<string>} sourceWalletIds - 移行元 Wallet ID の集合。
- * @returns {Promise<Object[]>} 検証済み Private Wallet データ。
- * @throws {Error} 参照先 Wallet が存在しない場合。
+ * @param {Set<string>} walletIds - Wallet ID一覧。
+ * @returns {Promise<Object[]>} 検証済みデータ。
  */
-const verifyPrivateWalletsBeforeMigration = async (sourceWalletIds) => {
+const verifyPrivateWalletsBeforeMigration = async (walletIds) => {
     logger.debug('*** verifyPrivateWalletsBeforeMigration start ***')
     try {
-        const response = await cloudWallet.query(
+        const result = await cloudWallet.query(
             `
             SELECT user_id, waltid_wallet
             FROM ${targetSchema}.priv_wallets
@@ -420,27 +383,30 @@ const verifyPrivateWalletsBeforeMigration = async (sourceWalletIds) => {
             `
         )
 
-        const result = []
+        const validated = []
 
-        for (const row of response.rows) {
+        for (const row of result.rows) {
             const userId = getText(row, 'user_id')
             const walletId = getText(row, 'waltid_wallet')
 
             if (!userId || !walletId) {
-                throw new Error('Missing user_id or waltid_wallet')
+                throw new Error(
+                    'Missing user_id or waltid_wallet'
+                )
             }
-            if (!sourceWalletIds.has(walletId)) {
+
+            if (!walletIds.has(walletId)) {
                 throw new Error(
                     `Wallet not found in walt.id source: ${walletId}`
                 )
             }
-            result.push({ userId, walletId })
+
+            validated.push({ userId, walletId })
         }
 
-        showData('priv_wallets validation', result)
-        return result
+        showData('priv_wallets validation', validated)
+        return validated
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -449,11 +415,10 @@ const verifyPrivateWalletsBeforeMigration = async (sourceWalletIds) => {
 }
 
 /**
- * Cloud Wallet DB に移行先テーブルを作成する。
- * 既存テーブルには不足カラムを追加する。
+ * 移行先テーブルを作成・更新する。
+ * 既存テーブルの不足カラムも自動的に追加する。
  *
  * @returns {Promise<void>}
- * @throws {Error} テーブル作成・変更に失敗した場合。
  */
 const createTargetTables = async () => {
     logger.debug('*** createTargetTables start ***')
@@ -463,7 +428,6 @@ const createTargetTables = async () => {
             CREATE TABLE IF NOT EXISTS ${targetSchema}.wallet_aliases (
                 waltid_wallet_id VARCHAR(128) NOT NULL,
                 wallet_name VARCHAR(128),
-                "default" BOOLEAN NOT NULL DEFAULT FALSE,
                 created_on TIMESTAMP WITH TIME ZONE
                     DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (waltid_wallet_id)
@@ -476,8 +440,9 @@ const createTargetTables = async () => {
             CREATE TABLE IF NOT EXISTS ${targetSchema}.did_aliases (
                 waltid_wallet_id VARCHAR(128) NOT NULL,
                 did VARCHAR(1024) NOT NULL,
-                key_id VARCHAR(128) NOT NULL,
                 alias VARCHAR(1024) NOT NULL,
+                key_id VARCHAR(512) NOT NULL,
+                "default" BOOLEAN DEFAULT FALSE NOT NULL,
                 created_on TIMESTAMP WITH TIME ZONE
                     DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (waltid_wallet_id, did)
@@ -485,31 +450,56 @@ const createTargetTables = async () => {
             `
         )
 
-        await cloudWallet.query(`
-            ALTER TABLE ${targetSchema}.wallet_aliases
+        // 既存テーブルにKey IDを追加する。
+        await cloudWallet.query(
+            `
+            ALTER TABLE ${targetSchema}.did_aliases
+            ADD COLUMN IF NOT EXISTS key_id VARCHAR(512)
+            `
+        )
+
+        // Key IDの最大長を512文字に統一する。
+        await cloudWallet.query(
+            `
+            ALTER TABLE ${targetSchema}.did_aliases
+            ALTER COLUMN key_id TYPE VARCHAR(512)
+            `
+        )
+
+        // DID単位のデフォルトフラグを追加する。
+        await cloudWallet.query(
+            `
+            ALTER TABLE ${targetSchema}.did_aliases
             ADD COLUMN IF NOT EXISTS "default"
-                BOOLEAN NOT NULL DEFAULT FALSE
-        `)
+                BOOLEAN DEFAULT FALSE NOT NULL
+            `
+        )
 
-        await cloudWallet.query(`
-            ALTER TABLE ${targetSchema}.did_aliases
-            ADD COLUMN IF NOT EXISTS key_id VARCHAR(128)
-        `)
+        // 以前のWallet単位のdefaultカラムは削除する。
+        await cloudWallet.query(
+            `
+            ALTER TABLE ${targetSchema}.wallet_aliases
+            DROP COLUMN IF EXISTS "default"
+            `
+        )
 
-        // 既存テーブルの日時型も TIMESTAMPTZ に統一する。
-        await cloudWallet.query(`
+        // 作成日時をタイムゾーン付きに統一する。
+        await cloudWallet.query(
+            `
             ALTER TABLE ${targetSchema}.wallet_aliases
             ALTER COLUMN created_on TYPE TIMESTAMP WITH TIME ZONE,
             ALTER COLUMN created_on SET DEFAULT CURRENT_TIMESTAMP
-        `)
+            `
+        )
 
-        await cloudWallet.query(`
+        await cloudWallet.query(
+            `
             ALTER TABLE ${targetSchema}.did_aliases
             ALTER COLUMN created_on TYPE TIMESTAMP WITH TIME ZONE,
             ALTER COLUMN created_on SET DEFAULT CURRENT_TIMESTAMP
-        `)
+            `
+        )
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -518,42 +508,35 @@ const createTargetTables = async () => {
 }
 
 /**
- * Wallet エイリアスを Cloud Wallet DB に登録・更新する。
+ * Walletエイリアスを登録・更新する。
  *
- * @param {Object[]} walletAliases - Wallet エイリアス一覧。
+ * @param {Object[]} items - Wallet一覧。
  * @returns {Promise<number>} 処理件数。
- * @throws {Error} 登録・更新に失敗した場合。
  */
-const migrateWalletAliases = async (walletAliases) => {
+const migrateWalletAliases = async (items) => {
     logger.debug('*** migrateWalletAliases start ***')
     try {
         let count = 0
 
-        for (const item of walletAliases) {
+        for (const item of items) {
             await cloudWallet.query(
                 `
                 INSERT INTO ${targetSchema}.wallet_aliases
-                    (waltid_wallet_id, wallet_name, "default", created_on)
-                VALUES ($1, $2, $3, $4)
+                    (waltid_wallet_id, wallet_name, created_on)
+                VALUES ($1, $2, $3)
                 ON CONFLICT (waltid_wallet_id)
                 DO UPDATE SET
                     wallet_name = EXCLUDED.wallet_name,
-                    "default" = EXCLUDED."default",
                     created_on = EXCLUDED.created_on
                 `,
-                [
-                    item.walletId,
-                    item.walletName,
-                    item.default,
-                    item.createdOn
-                ]
+                [item.walletId, item.walletName, item.createdOn]
             )
             count++
         }
 
+        logger.debug('result: ', count)
         return count
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -562,43 +545,51 @@ const migrateWalletAliases = async (walletAliases) => {
 }
 
 /**
- * DID エイリアスおよび関連 Key ID を Cloud Wallet DB に登録・更新する。
+ * DIDエイリアス、Key ID、defaultを登録・更新する。
  *
- * @param {Object[]} didAliases - DID エイリアス一覧。
+ * @param {Object[]} items - DID一覧。
  * @returns {Promise<number>} 処理件数。
- * @throws {Error} 登録・更新に失敗した場合。
  */
-const migrateDidAliases = async (didAliases) => {
+const migrateDidAliases = async (items) => {
     logger.debug('*** migrateDidAliases start ***')
     try {
         let count = 0
 
-        for (const item of didAliases) {
+        for (const item of items) {
             await cloudWallet.query(
                 `
                 INSERT INTO ${targetSchema}.did_aliases
-                    (waltid_wallet_id, did, key_id, alias, created_on)
-                VALUES ($1, $2, $3, $4, $5)
+                    (
+                        waltid_wallet_id,
+                        did,
+                        alias,
+                        key_id,
+                        "default",
+                        created_on
+                    )
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (waltid_wallet_id, did)
                 DO UPDATE SET
-                    key_id = EXCLUDED.key_id,
                     alias = EXCLUDED.alias,
+                    key_id = EXCLUDED.key_id,
+                    "default" = EXCLUDED."default",
                     created_on = EXCLUDED.created_on
                 `,
                 [
                     item.walletId,
                     item.did,
-                    item.keyId,
                     item.alias,
+                    item.keyId,
+                    item.default,
                     item.createdOn
                 ]
             )
             count++
         }
 
+        logger.debug('result: ', count)
         return count
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -607,11 +598,9 @@ const migrateDidAliases = async (didAliases) => {
 }
 
 /**
- * 移行先テーブルのカラム定義および主キーを検証する。
- * priv_wallets.waltid_wallet の型も検証する。
+ * 移行先のカラム定義と主キーを検証する。
  *
  * @returns {Promise<void>}
- * @throws {Error} テーブル定義が期待値と異なる場合。
  */
 const verifyTargetTableDefinitions = async () => {
     logger.debug('*** verifyTargetTableDefinitions start ***')
@@ -623,31 +612,35 @@ const verifyTargetTableDefinitions = async () => {
             wallet_aliases: {
                 waltid_wallet_id: ['character varying', 128, 'NO'],
                 wallet_name: ['character varying', 128, 'YES'],
-                default: ['boolean', null, 'NO'],
                 created_on: ['timestamp with time zone', null, 'YES']
             },
             did_aliases: {
                 waltid_wallet_id: ['character varying', 128, 'NO'],
                 did: ['character varying', 1024, 'NO'],
-                key_id: ['character varying', 128, 'NO'],
                 alias: ['character varying', 1024, 'NO'],
+                key_id: ['character varying', 512, 'NO'],
+                default: ['boolean', null, 'NO'],
                 created_on: ['timestamp with time zone', null, 'YES']
             }
         }
 
         for (const [table, expected] of Object.entries(definitions)) {
-            const response = await cloudWallet.query(
+            const result = await cloudWallet.query(
                 `
-                SELECT column_name, data_type,
-                       character_maximum_length, is_nullable
+                SELECT
+                    column_name,
+                    data_type,
+                    character_maximum_length,
+                    is_nullable
                 FROM information_schema.columns
-                WHERE table_schema = $1 AND table_name = $2
+                WHERE table_schema = $1
+                  AND table_name = $2
                 `,
                 [targetSchemaName, table]
             )
 
             const actual = Object.fromEntries(
-                response.rows.map(row => [row.column_name, row])
+                result.rows.map(row => [row.column_name, row])
             )
 
             for (const [column, definition] of Object.entries(expected)) {
@@ -657,6 +650,14 @@ const verifyTargetTableDefinitions = async () => {
                     row.data_type !== definition[0] ||
                     row.character_maximum_length !== definition[1] ||
                     row.is_nullable !== definition[2]) {
+                    logger.error(
+                        'expected: ',
+                        JSON.stringify({ table, column, definition })
+                    )
+                    logger.error(
+                        'actual: ',
+                        JSON.stringify(row || null)
+                    )
                     throw new Error(
                         `${table}.${column} definition mismatch`
                     )
@@ -670,7 +671,7 @@ const verifyTargetTableDefinitions = async () => {
         }
 
         for (const [table, expected] of Object.entries(primaryKeys)) {
-            const response = await cloudWallet.query(
+            const result = await cloudWallet.query(
                 `
                 SELECT json_agg(a.attname ORDER BY k.ord) AS columns
                 FROM pg_constraint c
@@ -689,16 +690,15 @@ const verifyTargetTableDefinitions = async () => {
                 [targetSchemaName, table]
             )
 
-            if (response.rows.length !== 1 ||
-                JSON.stringify(response.rows[0].columns) !==
+            if (result.rows.length !== 1 ||
+                JSON.stringify(result.rows[0].columns) !==
                 JSON.stringify(expected)) {
                 throw new Error(`${table} primary key mismatch`)
             }
         }
 
-        logger.debug('result : target table definitions are valid')
+        logger.debug('result: target table definitions are valid')
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -707,26 +707,24 @@ const verifyTargetTableDefinitions = async () => {
 }
 
 /**
- * 移行元と移行先の Wallet/DID エイリアスデータを照合する。
+ * 移行元と移行先のデータを照合する。
+ * Key IDとdefaultも検証対象とする。
  *
  * @param {Object} source - 移行元データ。
  * @returns {Promise<void>}
- * @throws {Error} 移行データに不一致がある場合。
  */
 const verifyMigratedData = async (source) => {
     logger.debug('*** verifyMigratedData start ***')
     try {
-        // 移行元の日時はタイムゾーンなしの値として取得している。
-        // 移行先の TIMESTAMPTZ は DB セッションの TimeZone で解釈されるため、
-        // 検証時も同じ TimeZone に戻して比較する。
         for (const item of source.walletAliases) {
-            const response = await cloudWallet.query(
+            const result = await cloudWallet.query(
                 `
                 SELECT
                     wallet_name,
-                    "default" AS is_default,
-                    (created_on AT TIME ZONE current_setting('TimeZone'))
-                        IS NOT DISTINCT FROM $2::timestamp
+                    (
+                        created_on AT TIME ZONE
+                        current_setting('TimeZone')
+                    ) IS NOT DISTINCT FROM $2::timestamp
                         AS created_on_matches
                 FROM ${targetSchema}.wallet_aliases
                 WHERE waltid_wallet_id = $1
@@ -734,10 +732,9 @@ const verifyMigratedData = async (source) => {
                 [item.walletId, item.createdOn]
             )
 
-            if (response.rowCount !== 1 ||
-                getText(response.rows[0], 'wallet_name') !== item.walletName ||
-                response.rows[0].is_default !== item.default ||
-                response.rows[0].created_on_matches !== true) {
+            if (result.rowCount !== 1 ||
+                getText(result.rows[0], 'wallet_name') !== item.walletName ||
+                result.rows[0].created_on_matches !== true) {
                 throw new Error(
                     `wallet_aliases mismatch: ${item.walletId}`
                 )
@@ -745,33 +742,37 @@ const verifyMigratedData = async (source) => {
         }
 
         for (const item of source.didAliases) {
-            const response = await cloudWallet.query(
+            const result = await cloudWallet.query(
                 `
                 SELECT
-                    key_id,
                     alias,
-                    (created_on AT TIME ZONE current_setting('TimeZone'))
-                        IS NOT DISTINCT FROM $3::timestamp
+                    key_id,
+                    "default" AS is_default,
+                    (
+                        created_on AT TIME ZONE
+                        current_setting('TimeZone')
+                    ) IS NOT DISTINCT FROM $3::timestamp
                         AS created_on_matches
                 FROM ${targetSchema}.did_aliases
-                WHERE waltid_wallet_id = $1 AND did = $2
+                WHERE waltid_wallet_id = $1
+                  AND did = $2
                 `,
                 [item.walletId, item.did, item.createdOn]
             )
 
-            if (response.rowCount !== 1 ||
-                getText(response.rows[0], 'key_id') !== item.keyId ||
-                getText(response.rows[0], 'alias') !== item.alias ||
-                response.rows[0].created_on_matches !== true) {
+            if (result.rowCount !== 1 ||
+                getText(result.rows[0], 'alias') !== item.alias ||
+                getText(result.rows[0], 'key_id') !== item.keyId ||
+                result.rows[0].is_default !== item.default ||
+                result.rows[0].created_on_matches !== true) {
                 throw new Error(
                     `did_aliases mismatch: ${item.walletId}, ${item.did}`
                 )
             }
         }
 
-        logger.debug('result : migrated data is valid')
+        logger.debug('result: migrated data is valid')
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -780,11 +781,10 @@ const verifyMigratedData = async (source) => {
 }
 
 /**
- * Wallet/DID エイリアスの移行処理を実行する。
- * Dry Run の場合は ROLLBACK、Apply の場合は COMMIT する。
+ * Wallet/DIDデータを移行する。
+ * Dry RunはROLLBACK、ApplyはCOMMITする。
  *
  * @returns {Promise<Object>} 移行件数。
- * @throws {Error} 移行または検証に失敗した場合。
  */
 const migrate = async () => {
     logger.debug('*** migrate start ***')
@@ -807,13 +807,13 @@ const migrate = async () => {
         const didAliases =
             await migrateDidAliases(source.didAliases)
 
-        // 移行後に Key ID の必須制約を適用する。
-        // 移行元に存在しない既存行が NULL の場合はエラーとし、
-        // トランザクション全体を ROLLBACK する。
-        await cloudWallet.query(`
+        // データ登録後にKey IDの必須制約を設定する。
+        await cloudWallet.query(
+            `
             ALTER TABLE ${targetSchema}.did_aliases
             ALTER COLUMN key_id SET NOT NULL
-        `)
+            `
+        )
 
         await verifyTargetTableDefinitions()
         await verifyMigratedData(source)
@@ -843,7 +843,10 @@ const migrate = async () => {
             try {
                 await cloudWallet.query('ROLLBACK')
             } catch (rollbackError) {
-                logger.error('rollback error: ', rollbackError.stack)
+                logger.error(
+                    'rollback error: ',
+                    rollbackError.stack
+                )
             }
         }
 
@@ -856,10 +859,9 @@ const migrate = async () => {
 }
 
 /**
- * 移行先テーブルの定義、件数、Wallet 参照整合性を検証する。
+ * 移行先のテーブル定義、件数、参照整合性を検証する。
  *
  * @returns {Promise<void>}
- * @throws {Error} 検証に失敗した場合。
  */
 const verify = async () => {
     logger.debug('*** verify start ***')
@@ -867,12 +869,17 @@ const verify = async () => {
         await verifyTargetTableDefinitions()
 
         const walletCount = await cloudWallet.query(
-            `SELECT COUNT(*)::int AS count
-             FROM ${targetSchema}.wallet_aliases`
+            `
+            SELECT COUNT(*)::int AS count
+            FROM ${targetSchema}.wallet_aliases
+            `
         )
+
         const didCount = await cloudWallet.query(
-            `SELECT COUNT(*)::int AS count
-             FROM ${targetSchema}.did_aliases`
+            `
+            SELECT COUNT(*)::int AS count
+            FROM ${targetSchema}.did_aliases
+            `
         )
 
         const invalidPrivateWallets = await cloudWallet.query(
@@ -906,7 +913,6 @@ const verify = async () => {
         )
         console.log('Migration verification: SUCCESS')
     } catch (error) {
-        logger.error('error.message: ', error.message)
         logger.error('error.stack: ', error.stack)
         throw error
     } finally {
@@ -915,13 +921,13 @@ const verify = async () => {
 }
 
 /**
- * コマンドライン引数を検証し、DB 接続および移行・検証を実行する。
- * 処理終了後、DB 接続を切断する。
+ * 引数を検証して移行または検証を実行する。
  *
  * @returns {Promise<void>}
  */
 const main = async () => {
     logger.debug('*** main start ***')
+
     let waltIdConnected = false
     let cloudWalletConnected = false
 
@@ -930,8 +936,8 @@ const main = async () => {
 
         if (
             !['migrate', 'verify'].includes(command) ||
-            flags.some(f =>
-                !['--apply', '--dry-run', '--print-data'].includes(f)
+            flags.some(flag =>
+                !['--apply', '--dry-run', '--print-data'].includes(flag)
             ) ||
             (apply && process.argv.includes('--dry-run')) ||
             (command === 'verify' &&
@@ -971,3 +977,16 @@ const main = async () => {
 }
 
 main()
+
+
+// ### did_aliases
+
+// | カラム | データ型 | 説明 |
+// |---|---|---|
+// | `waltid_wallet_id` | VARCHAR(128) NOT NULL | walt.id の Wallet ID（複合主キー） |
+// | `did` | VARCHAR(1024) NOT NULL | DID（複合主キー） |
+// | `alias` | VARCHAR(1024) NOT NULL | DID エイリアス |
+// |`key_id`	|VARCHAR(512) NOT NULL|	DID に関連付けられた Key ID|
+// |`default`|	BOOLEAN DEFAULT FALSE NOT NULL|	デフォルト DID フラグ|
+// | `created_on` | TIMESTAMP | 作成日時 |
+
