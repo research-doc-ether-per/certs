@@ -1,15 +1,18 @@
-**処理名：ウォレット削除**
+**処理名：ウォレット作成**
 
 **処理内容**
 
 1. ウォレット管理API認証を実施する。
 
 2. パラメータの必須チェックを実施する。
+
    以下の場合エラーを返却する。
    - 必須情報が存在しない場合：RequireParamsNotFoundError
 
 3. パラメータから情報を取得する。
+
    アクセストークンのRealm名から個人ユーザー／組織ユーザーを判定する。
+
    - CertAuth：個人ユーザー
    - GroupCertAuth：組織ユーザー
 
@@ -18,96 +21,59 @@
 
    【組織ユーザーの場合】
    - ユーザーID：アクセストークンのiss＋リクエストパラメータで指定された組織ウォレットID（accessToken.groups内のgroup名）
+   - 組織ウォレットID：リクエストパラメータで指定された組織ウォレットID
 
 4. DBトランザクションを開始する。
 
-5. VCウォレットテーブル（`vc_wallets`）から削除対象ユーザーが保有する証明書情報を削除する。
-
-   ■条件
-   - 所有者ユーザーID：3で取得したユーザーID
-
-   ※削除対象データが存在しない場合も処理を継続する。
-
-6. 個人ウォレットテーブル（`priv_wallets`）から削除対象ユーザーのウォレット情報を取得し、削除する。
+5. 個人ウォレットテーブル（`priv_wallets`）を検索し、対象ユーザーのウォレット情報が既に存在するか確認する。
 
    ■条件
    - `user_id`：3で取得したユーザーID
 
-   取得したWaltidウォレットIDを後続処理で使用する。
+   以下の場合エラーを返却する。
+   - ウォレット情報が存在する場合：WalletAlreadyExistsError
 
-   ※削除対象データが存在しない場合も処理を継続する。
+   ※ウォレット情報が存在しない場合、処理を継続する。
 
-7. ウォレットエイリアス情報テーブル（`wallet_aliases`）から対象ウォレットの情報を削除する。
+6. 共通処理「Waltidウォレット作成」を実施し、ウォレット、KeyおよびDIDを作成する。
 
-   ■条件
-   - `waltid_wallet_id`：取得したWaltidウォレットID
+   【取得情報】
+   - `walletId`：作成したWaltidウォレットID
+   - `keyId`：生成したKeyのID
+   - `did`：作成したDID
 
-   ※削除対象データが存在しない場合も処理を継続する。
+7. 個人ウォレットテーブル（`priv_wallets`）に以下の情報を登録する。
 
-8. DIDエイリアス情報テーブル（`did_aliases`）から対象ウォレットのDID情報を削除する。
+   【登録情報】
+   - `user_id`：3で取得したユーザーID
+   - `waltid_wallet`：6で作成したWaltidウォレットID
 
-   ■条件
-   - `waltid_wallet_id`：取得したWaltidウォレットID
+8. ウォレットエイリアス情報テーブル（`wallet_aliases`）に以下の情報を登録する。
 
-   ※削除対象データが存在しない場合も処理を継続する。
+   【登録情報】
+   - `waltid_wallet_id`：6で作成したWaltidウォレットID
+   - `wallet_name`：
+     - 個人ユーザーの場合：`Wallet of ${kcUser.name}`
+     - 組織ユーザーの場合：`Wallet of ${groupId}`
 
-9. 共通処理「Waltidウォレット削除」を実施する。
+   ※`created_on`にはデフォルト値（CURRENT_TIMESTAMP）を使用する。
 
-10. 環境変数のSmartLiTA退会設定を確認する。
+9. DIDエイリアス情報テーブル（`did_aliases`）に以下の情報を登録する。
 
-    SmartLiTA退会設定がtrueの場合、SmartLiTAの「利用者情報削除API」を呼び出し、SmartLiTAから退会を実施する。
+   【登録情報】
+   - `waltid_wallet_id`：6で作成したWaltidウォレットID
+   - `did`：6で作成したDID
+   - `alias`：Initial_DID
+   - `key_id`：6で生成したKeyのID
 
-    エンドポイント：`/UserMngRP/sp/api/v1/users/{userId}`  
-    メソッド：DELETE
+   ※`created_on`にはデフォルト値（CURRENT_TIMESTAMP）を使用する。
 
-    パラメータ：
-    - `userId`：利用者情報を削除するユーザーのID
+10. DBトランザクションをコミットする。
 
-    ※204が成功レスポンス。
+11. 成功レスポンスを返却する。
 
-    以下の場合エラーを返却する。
-    - SmartLiTAから基本4情報を取得できなかった場合：SmartLiTAからのHTTPステータスコードを返却する。
-    - 400：DeleteUserSmartLiTARequestError
-    - 401：DeleteUserSmartLiTAAuthenticationError
-    - 403：DeleteUserSmartLiTAForbiddenError
-    - 404：DeleteUserSmartLiTANotFoundError
-    - 500：DeleteUserSmartLiTAInternalServerError
-    - 上記以外：InternalServerError
+※DBトランザクション内でエラーが発生した場合、DBトランザクションをロールバックする。
 
-11. DBトランザクションをコミットする。
-
-12. 成功レスポンスを返却する。
-
-※処理中にエラーが発生した場合、DBトランザクションをロールバックする。
+※作成済みのWaltidウォレットが存在する場合、Waltid Wallet APIのウォレット削除を呼び出し、当該ウォレットを削除する。
 
 ※処理中に上記記載以外のエラーが発生した場合、InternalServerErrorを返却する。
-
-
-
-
-
-**処理名：Waltidウォレット削除**
-
-**概要：Waltidウォレットを削除する。**
-
-**処理内容**
-
-Waltid Wallet API（wallet-api2）のウォレット削除を呼び出し、対象ウォレットを削除する。
-
-エンドポイント：`/wallet/{walletId}`  
-メソッド：DELETE
-
-パラメータ：
-- `walletId`：削除対象のWaltidウォレットID
-
-ボディ：なし
-
-エラーが発生した場合、呼び出し元にエラーを返却する。
-
-
-
-
-
-
-
-
