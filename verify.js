@@ -1,65 +1,67 @@
-**処理名：ウォレット作成**
 
-**概要：Waltidウォレットを作成する。**
 
-**処理内容**
+Waltid Wallet APIのウォレット作成を呼び出し、ウォレットを作成する。
+エンドポイント：`/wallet`  
+メソッド：POST  
+ボディ：なし（デフォルト設定を使用）
 
-ウォレット管理API認証を実施する。
+【取得情報】
+- `walletId`：作成したウォレットID
 
-パラメータの必須チェックを実施する。
+ウォレットIDが取得できなかった場合、エラーとする。
 
-以下の場合エラーを返却する。
-- 必須情報が存在しない場合：RequireParamsNotFoundError
+Waltid Wallet APIのKey生成を呼び出し、作成したウォレットにKeyを生成する。
+エンドポイント：`/wallet/{walletId}/keys/generate`  
+メソッド：POST  
+パラメータ：
+- `walletId`：作成したウォレットID
 
-パラメータから情報を取得する。
+ボディ：
+- `backend`：jwk
+- `keyType`：secp256r1
 
-アクセストークンのRealm名から個人ユーザー／組織ユーザーを判定する。
-- CertAuth：個人ユーザー
-- GroupCertAuth：組織ユーザー
+【取得情報】
+- `keyId`：生成したKeyのID
 
-【個人ユーザーの場合】
-アクセストークンの`sub`をユーザーIDとして取得する。
+Key IDが取得できなかった場合、エラーとする。
 
-【組織ユーザーの場合】
-アクセストークンの`iss`とリクエストパラメータで指定された組織ウォレットIDを結合し、ユーザーIDとして取得する。
+Waltid Wallet APIのデフォルトKey設定を呼び出し、生成したKeyをウォレットのデフォルトKeyに設定する。
+エンドポイント：`/wallet/{walletId}/keys/{keyId}/set-default`  
+メソッド：PUT  
+パラメータ：
+- `walletId`：作成したウォレットID
+- `keyId`：生成したKeyのID
+ボディ：なし
 
-取得したユーザーIDをキーにCloud Walletの個人ウォレットテーブル（`priv_wallets`）を検索し、既にウォレット情報が存在するか確認する。
+Waltid Wallet APIのDID作成を呼び出し、生成したKeyを使用してウォレットにDIDを作成する。
+エンドポイント：`/wallet/{walletId}/dids/create`  
+メソッド：POST  
+パラメータ：
+- `walletId`：作成したウォレットID
+ボディ：
+- `method`：jwk
+- `keyId`：生成したKeyのID
+- `options`：空オブジェクト
 
-【検索条件】
-- `user_id`：取得したユーザーID
-
-以下の場合エラーを返却する。
-- ウォレット情報が存在する場合：WalletAlreadyExistsError
-- ウォレット情報が存在しない場合：以下の処理を続ける。
-
-共通処理「Waltidウォレット作成」を実施し、ウォレット、KeyおよびDIDを作成する。
-
-Cloud Walletの個人ウォレットテーブル（`priv_wallets`）に以下の情報を登録する。
-
-【登録情報】
-- `user_id`：取得したユーザーID
-- `waltid_wallet`：作成したWaltidのウォレットID
-
-Cloud Walletのウォレットエイリアス情報テーブル（`wallet_aliases`）に以下の情報を登録する。
-
-【登録情報】
-- `waltid_wallet_id`：作成したWaltidのウォレットID
-- `wallet_name`：
-  - 個人ユーザーの場合：`Wallet of ${kcUser.name}`
-  - 組織ユーザーの場合：`Wallet of ${groupId}`
-
-Cloud WalletのDIDエイリアス情報テーブル（`did_aliases`）に以下の情報を登録する。
-
-【登録情報】
-- `waltid_wallet_id`：作成したWaltidのウォレットID
+【取得情報】
 - `did`：作成したDID
-- `alias`：`Initial_DID`
-- `key_id`：生成したKeyのID
 
-※各テーブルの`created_on`にはデフォルト値（CURRENT_TIMESTAMP）を設定する。
+DIDが取得できなかった場合、エラーとする。
 
-成功レスポンスを返却する。
+Waltid Wallet APIのデフォルトDID設定を呼び出し、作成したDIDをウォレットのデフォルトDIDに設定する。
+エンドポイント：`/wallet/{walletId}/dids/{did}/set-default`  
+メソッド：PUT  
+パラメータ：
+- `walletId`：作成したウォレットID
+- `did`：作成したDID
+ボディ：なし
 
-エラーが発生した場合、Cloud Wallet DBのトランザクションをロールバックする。また、Waltidで作成したウォレットの削除を実施する。
+作成したウォレットID、Key IDおよびDIDを呼び出し元の処理で使用する。
 
-※処理中に上記記載以外のエラーが発生した場合、InternalServerErrorを返却する。
+エラーが発生した場合、作成済みのWaltidウォレットが存在するときは、当該ウォレットを削除する。
+エンドポイント：`/wallet/{walletId}`  
+メソッド：DELETE  
+パラメータ：
+- `walletId`：作成したウォレットID
+ボディ：なし
+
