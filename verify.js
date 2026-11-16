@@ -1,20 +1,24 @@
-「VC参照API認証」処理を実施する。
+「VC追加・更新API認証」処理を実施する。
 
-共通処理「VC参照API認証」参照。
+共通処理「VC追加・更新API認証」参照。
 
 ————————
 
-パラメータの必須チェックを実施する。
+パラメータ／ボディの必須チェックを実施する。
 
 以下の場合、エラーを返却する。
 - 必須情報が存在しない場合：RequireParamsNotFoundError
 
 ————————
 
-リクエストパラメータ、アクセストークンから以下の情報を取得する。
+リクエストボディ、アクセストークンから以下の情報を取得する。
 
 - ユーザーID：アクセストークンのsub（accessToken.sub）
-- リソースID：リクエストパラメータのrsId
+- 証明書データ：certJwt
+- 証明書名：certName
+- 証明書の補足説明：certExplanation
+- ドキュメントID：docId
+- 所有者名：アクセストークンのpreferred_username
 
 ————————
 
@@ -23,77 +27,114 @@
 ウォレットが存在しない場合、以下のエラーを返却する。
 - WalletNotFoundError
 
-ウォレットが存在する場合、ウォレット情報から以下を取得する。
+ウォレットが存在する場合、以下の情報を取得する。
 - Walt.idウォレットID：waltid_wallet
 
 ————————
 
-以下の検索条件に基づいて、VCウォレットテーブル（vc_wallets）から証明書情報を取得する。
+証明書データ（certJwt）の形式を検証し、JWTまたはSD-JWTを解析する。
 
-■ 検索条件
-- 所有者ユーザーID（owner_id）＝ユーザーID
-- リソースID（rs_id）＝指定されたrsId
+共通処理「parseCredentialForAdd」参照。
 
-■ 取得情報
-- リソースID（rs_id）
-- 所有者ユーザーID（owner_id）
-- 所有者名（owner_name）
-- 証明書名（cert_name）
-- 証明書の補足説明（cert_explanation）
-- ドキュメントID（doc_id）
-- 画像URL（img_url）
-- 発行日時（issuance_date）
-- 有効期限終了日時（expiration_date）
-- 発行者（issuer）
-- 対象者（subject）
-- Walt.id証明書ID（waltid_credential_id）
-- 更新日時（update_date）
-- 作成日時（create_date）
+解析に失敗した場合、以下のエラーを返却する。
+- CertificateAddFailedError
 
-対象の証明書が存在しない場合、空オブジェクトを返却する。
+解析結果から以下の情報を取得する。
+- 証明書フォーマット
+- JWTヘッダー
+- JWTペイロード
+- JWT署名
+- Disclosures
+- Key Binding JWT
 
 ————————
 
-取得したWalt.id証明書IDに基づいて、Walt.idから証明書情報を取得する。
+解析した証明書情報から、以下の情報を取得する。
+
+- 発行日時
+- 有効期限終了日時
+- 発行者DID
+- 対象者DID
+- 証明書の種別
+- 証明書ID
+
+取得できない任意項目にはnullを設定する。
+
+————————
+
+証明書の種別およびフォーマットに基づいて、基本4情報の証明書であるかを判定する。
+
+SD-JWT形式の場合、VCTの末尾のパス要素が基本4情報の識別子に一致するかを確認する。
+
+————————
+
+基本4情報以外の証明書の場合、証明書IDをキーに、既に同一証明書が登録されているかを確認する。
+
+同一証明書が存在する場合、以下のエラーを返却する。
+- CredentialAlreadyExistsError
+
+————————
+
+基本4情報の証明書の場合、既存の基本4情報証明書を確認する。
+
+既存の基本4情報証明書が存在する場合、発行日時を比較する。
+
+- 追加対象の発行日時が既存の発行日時より古い場合：Basic4InfoOldIssueDateErrorを返却する。
+- 追加対象の発行日時が既存の発行日時以降の場合：既存の基本4情報証明書を削除対象とする。
+
+————————
+
+Walt.id Wallet APIを呼び出し、証明書をインポートする。
 
 ■ 使用API
-- エンドポイント：/wallet/{walletId}/credentials/{credentialId}
-- メソッド：GET
+- エンドポイント：/wallet/{walletId}/credentials/import
+- メソッド：POST
 
 ■ パスパラメータ
 - walletId：取得したWalt.idウォレットID
-- credentialId：VCウォレットテーブルのwaltid_credential_id
+
+■ リクエストボディ
+- rawCredential：リクエストで指定されたcertJwt
+- label：証明書の表示名称（certName）
+
+JWT形式、SD-JWT形式のいずれの場合も、証明書データ全体をrawCredentialに指定する。
+
+SD-JWT形式の場合、Disclosures部分を含む文字列を指定する。
 
 ————————
 
-Walt.idから取得した証明書情報に基づいて、証明書データ（jwt）を取得する。
+Walt.idから返却された証明書IDを取得する。
 
-■ 取得ルール
-- 証明書フォーマットが「dc+sd-jwt」の場合：credential.signedWithDisclosures
-- 上記以外の場合：credential.signed
-
-SD-JWT形式の場合、Disclosures部分を含む証明書データを取得する。
+取得した証明書IDを、VCウォレットテーブル（vc_wallets）に登録する証明書の識別子として使用する。
 
 ————————
 
-取得した情報を以下のレスポンス項目に設定し、成功レスポンスを返却する。
+以下の情報をVCウォレットテーブル（vc_wallets）に登録する。
 
-■ レスポンス
-- rsId：リソースID
-- ownerId：所有者ユーザーID
-- ownerName：所有者名
-- certName：証明書名
-- certExplanation：証明書の補足説明
-- docId：ドキュメントID
-- imgUrl：画像URL
-- issuanceDate：発行日時（UTC Unix時刻に変換）
-- expirationDate：有効期限終了日時（UTC Unix時刻に変換）
-- issuer：発行者
-- issuerName：null
-- subject：対象者
-- jwt：取得したJWTまたはSD-JWT
-- updateDate：更新日時（UTC Unix時刻に変換）
-- createDate：作成日時（UTC Unix時刻に変換）
+- rs_id：生成したリソースID
+- owner_id：ユーザーID
+- owner_name：所有者名
+- cert_name：証明書名
+- cert_explanation：証明書の補足説明
+- doc_id：ドキュメントID
+- issuance_date：発行日時
+- expiration_date：有効期限終了日時
+- issuer：発行者DID
+- subject：対象者DID
+- waltid_credential_id：Walt.id証明書ID
+- hash：証明書の対象者情報から取得したハッシュ値
+
+基本4情報の証明書の場合、doc_idには0を設定する。
+
+基本4情報以外の証明書でdocIdが指定されていない場合、doc_idには999を設定する。
+
+————————
+
+基本4情報の証明書を更新する場合、既存の基本4情報証明書に対応する情報を削除する。
+
+————————
+
+登録したリソースID（rsId）をレスポンスに設定し、成功レスポンスを返却する。
 
 ————————
 
