@@ -42,30 +42,18 @@ Realm名に応じて、所有者情報を取得する。
 
 ————————
 
-証明書データ（certJwt）が空文字列ではない文字列であることを確認する。
+証明書データ（certJwt）の形式を検証し、JWTまたはSD-JWTを解析する。
 
-JWTまたはSD-JWTの形式を検証し、証明書データを解析する。
-
-- 証明書データに「~」が含まれる場合、SD-JWT形式として判定する。
-- 「~」が含まれない場合、JWT形式として判定する。
-- SD-JWT形式の場合、「~」で分割し、先頭要素をJWT部分として取得する。
-- JWT部分がHeader.Payload.Signatureの3要素で構成されていることを確認する。
-- HeaderおよびPayloadのBase64URL形式を検証し、デコードしてJSONデータを取得する。
-- JWT署名部分の形式を確認する。
-- SD-JWT形式の場合、Disclosures部分を検証し、Base64URLデコードして解析する。
-- Key Binding JWTが存在する場合、その形式を検証して解析する。
+解析に失敗した場合、以下のエラーを返却する。
+- CertificateAddFailedError
 
 解析結果から以下の情報を取得する。
-- 証明書フォーマット：jwt_vc_jsonまたはdc+sd-jwt
-- JWT文字列
+- 証明書フォーマット
 - JWTヘッダー
 - JWTペイロード
 - JWT署名
 - Disclosures
 - Key Binding JWT
-
-解析に失敗した場合、以下のエラーを返却する。
-- CertificateAddFailedError
 
 ————————
 
