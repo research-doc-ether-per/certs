@@ -4,7 +4,7 @@
 
 ————————
 
-パラメータ／ボディの必須チェックを実施する。
+パラメータおよびリクエストボディの必須チェックを実施する。
 
 以下の場合、エラーを返却する。
 - 必須情報が存在しない場合：RequireParamsNotFoundError
@@ -13,26 +13,33 @@
 
 リクエストパラメータ、リクエストボディ、アクセストークンから以下の情報を取得する。
 
-- ユーザーIDまたは組織ウォレットID
+■ リクエスト情報
 - 証明書データ：certJwt
 - 証明書名：certName
 - 証明書の補足説明：certExplanation
 - ドキュメントID：docId
+- リソースID：rsId（指定されている場合）
 
 Realm名に応じて、所有者情報を取得する。
 
 【個人ユーザーの場合】
-- 所有者ユーザーID：ユーザーID（accessToken.sub）
-- 所有者名：アクセストークンのpreferred_username
+- 所有者ユーザーID：リクエストユーザーID（アクセストークンのsub）
+- 所有者名：Keycloakユーザー情報のpreferred_username
 
 【組織ユーザーの場合】
-- 所有者ユーザーID：アクセストークンのissと組織ウォレットIDを連結した文字列
-- 所有者名：リクエストパラメータで指定された組織ウォレットID
-- グループID：リクエストパラメータで指定された組織ウォレットID
+- 所有者ユーザーID：Keycloakユーザー情報のissと、リクエストで指定されたグループIDを連結した文字列
+- 所有者名：リクエストで指定されたグループID
+- グループID：リクエストで指定されたグループID
+
+対応していないRealm名の場合、以下のエラーを返却する。
+- InvalidParamsError
 
 ————————
 
-取得した所有者ユーザーIDをキーに個人ウォレットテーブル（priv_wallets）を検索し、ウォレットの存在を確認する。
+取得した所有者ユーザーIDをキーに、個人ウォレットテーブル（priv_wallets）を検索し、ウォレットの存在を確認する。
+
+■ 検索条件
+- user_id：取得した所有者ユーザーID
 
 ウォレットが存在しない場合、以下のエラーを返却する。
 - WalletNotFoundError
@@ -42,150 +49,226 @@ Realm名に応じて、所有者情報を取得する。
 
 ————————
 
-証明書データ（certJwt）の形式を検証し、JWTまたはSD-JWTを解析する。
+証明書データ（certJwt）の形式チェックおよび解析を実施する。
+
+■ 形式チェック
+
+証明書データが空文字列ではない文字列であることを確認する。
+
+証明書データに「~」が含まれる場合、SD-JWT形式として処理する。それ以外の場合、JWT形式として処理する。
+
+JWT部分について、以下を確認する。
+- 「.」で区切られた3つの要素で構成されていること
+- HeaderおよびPayloadが有効なBase64URL形式であること
+- HeaderおよびPayloadをJSONデータとして解析できること
+- 署名部分が所定の形式であること
+
+SD-JWT形式の場合、以下を確認する。
+- JWT部分とDisclosures部分が「~」で区切られていること
+- 各Disclosureが有効なBase64URL形式であること
+- デコードしたDisclosureが2要素または3要素の配列であること
+- Key Binding JWTが存在する場合、そのJWT形式が正しいこと
+
+■ 解析処理
+
+JWT部分のHeaderおよびPayloadをBase64URLデコードし、JSONデータとして取得する。
+
+SD-JWT形式の場合、Disclosuresをデコードして解析する。
+
+Key Binding JWTが存在する場合、その情報を取得する。
 
 解析に失敗した場合、以下のエラーを返却する。
 - CertificateAddFailedError
 
-解析結果から以下の情報を取得する。
-- 証明書フォーマット
-- JWTヘッダー
-- JWTペイロード
-- JWT署名
-- Disclosures
-- Key Binding JWT
+※ 本処理ではJWT／SD-JWTの形式チェックおよびデコードを行い、電子署名の検証は行わない。
 
 ————————
 
-解析した証明書情報から以下の情報を取得する。
+解析したJWTペイロードから、証明書情報を取得する。
 
-- 発行日時
-- 有効期限終了日時
-- 発行者DID
-- 対象者DID
-- 証明書ID
-- 証明書フォーマット
-- 証明書の種別
-- VCT（SD-JWT形式の場合）
+JWTペイロードにvcが存在する場合、vcを証明書情報として使用する。
 
-取得できない任意項目にはnullを設定する。
+vcが存在しない場合、JWTペイロード自体を証明書情報として使用する。
+
+■ 取得情報
+- 証明書情報：payload.vc または payload
+- 証明書対象者情報：credential.credentialSubject
+- VCT：credential.vct
+- 発行日時：credential.issuanceDate
+- 有効期限終了日時：credential.expirationDate
+- 発行者：credential.issuer
+- 対象者：credential.credentialSubject.id
+
+発行日時、有効期限終了日時、発行者、対象者が取得できない場合、nullを設定する。
 
 ————————
 
-一意のリソースID（UUID）を生成する。
+リクエストでリソースID（rsId）が指定されていない場合、UUIDを生成して設定する。
+
+証明書ID（credentialId）を取得する。
+
+- 証明書情報にidが存在する場合、その値を使用する。
+- idが存在しない場合、「urn:uuid:」とリソースIDを連結した文字列を設定する。
 
 ————————
 
-取得した証明書情報から、追加対象の証明書が基本4情報の証明書であるかを判定する。
+証明書対象者情報（credentialSubject）をJSON文字列に変換し、SHA-256ハッシュ値を生成する。
 
-【基本4情報と判定するケース】
-- 証明書がSD-JWT形式である。
-- VCTの末尾のパス要素が「base_4_info」である。
+生成したハッシュ値は、VCウォレットテーブル登録時に先頭へ「0x」を付与して設定する。
 
-【基本4情報以外と判定するケース】
-- 上記以外の場合。
+————————
+
+証明書のVCTに基づいて、基本4情報の証明書であるかを判定する。
+
+基本4情報判定処理「isBase4InfoCredential」を実施する。
+
+判定結果に応じて、後続の既存証明書確認処理を分岐する。
 
 ————————
 
 DBトランザクションを開始する。
 
-以降のDB更新処理は、同一トランザクション内で実施する。
-
-————————
-
-【証明書が基本4情報以外の場合】
-
-証明書IDをキーに、既存の証明書管理情報を検索し、同一証明書が登録されていないことを確認する。
-
-同一証明書が存在する場合、以下のエラーを返却する。
-- CredentialAlreadyExistsError
-
-存在しない場合、後続の追加処理を実施する。
+以降のVCウォレットテーブルの検索、削除および登録処理を同一DBトランザクション内で実施する。
 
 ————————
 
 【証明書が基本4情報の場合】
 
-VCウォレットテーブル（vc_wallets）から、ドキュメントIDが0の既存の基本4情報証明書を検索する。
+ドキュメントID（docId）に基本4情報の固定値（docIds.b4d）を設定する。
 
-既存の基本4情報証明書が存在する場合、以下の処理を実施する。
+VCウォレットテーブル（vc_wallets）を検索し、既存の基本4情報証明書が存在するかを確認する。
 
-- 既存レコードのwaltid_credential_idを取得する。
-- Walt.id Wallet APIから既存の証明書情報を取得する。
-- 既存証明書の発行日時と追加対象証明書の発行日時を比較する。
+■ 検索テーブル
+- vc_wallets
 
-【追加対象の発行日時が既存証明書の発行日時より古い場合】
-- Basic4InfoOldIssueDateErrorを返却する。
+■ 検索条件
+- owner_id：所有者ユーザーID
+- doc_id：基本4情報の固定値（docIds.b4d）
 
-【追加対象の発行日時が既存証明書の発行日時と同じ、または新しい場合】
-- 既存の基本4情報証明書を更新対象として取得する。
-- 既存のVCウォレットテーブルのレコードを削除する。
-- 既存の証明書管理情報が存在する場合、該当レコードを削除する。
-- Walt.id Wallet APIを呼び出し、既存の証明書を削除する。
+既存の基本4情報証明書が存在する場合、取得結果の先頭レコードから以下の情報を取得する。
 
-既存の基本4情報証明書が存在しない場合、後続の追加処理を実施する。
+■ 取得情報
+- issuance_date：既存証明書の発行日時
+- waltid_credential_id：既存証明書のWalt.id証明書ID
+- rs_id：既存証明書のリソースID
+
+追加対象証明書の発行日時と、既存証明書の発行日時を比較する。
+
+【追加対象の発行日時が既存証明書の発行日時と同じ、または古い場合】
+
+以下のエラーを返却する。
+- Basic4InfoOldIssueDateError
+
+DBトランザクションをロールバックし、証明書追加処理を終了する。
+
+【追加対象の発行日時が既存証明書の発行日時より新しい場合】
+
+既存の基本4情報証明書を削除する。
+
+VCウォレットテーブル（vc_wallets）から既存レコードを削除する。
+
+■ 削除テーブル
+- vc_wallets
+
+■ 削除条件
+- owner_id：所有者ユーザーID
+- rs_id：既存証明書のリソースID
+
+続いて、Walt.id Wallet APIを呼び出し、既存の証明書をウォレットから削除する。
+
+■ 使用API
+- メソッド：DELETE
+- エンドポイント：/wallet/{walletId}/credentials/{credentialId}
+
+■ パスパラメータ
+- walletId：Walt.idウォレットID
+- credentialId：既存レコードのwaltid_credential_id
+
+削除処理が正常に完了した場合、後続の証明書登録処理を実施する。
+
+既存の基本4情報証明書が存在しない場合、削除処理を行わず、後続の証明書登録処理を実施する。
 
 ————————
 
-Walt.id Wallet APIを呼び出し、証明書をインポートする。
+【証明書が基本4情報以外の場合】
 
-■ エンドポイント
-POST /wallet/{walletId}/credentials/import
+Walt.id Wallet APIを呼び出し、追加対象と同じ証明書IDの証明書がウォレットに存在するかを確認する。
+
+■ 使用API
+- メソッド：GET
+- エンドポイント：/wallet/{walletId}/credentials/{credentialId}
+
+■ パスパラメータ
+- walletId：Walt.idウォレットID
+- credentialId：追加対象の証明書ID
+
+同一証明書が存在する場合、以下のエラーを返却する。
+- CredentialAlreadyExistsError（HTTP 409）
+
+DBトランザクションをロールバックし、証明書追加処理を終了する。
+
+証明書の取得時にエラーが発生した場合、既存証明書なしとして後続の登録処理を実施する。
+
+————————
+
+VCウォレットテーブル（vc_wallets）に追加対象の証明書情報を登録する。
+
+■ 登録テーブル
+- vc_wallets
+
+■ 登録情報
+- rs_id：リソースID
+- owner_id：所有者ユーザーID
+- owner_name：所有者名
+- cert_name：証明書名
+- cert_explanation：証明書の補足説明
+- doc_id：ドキュメントID
+- issuance_date：発行日時
+- expiration_date：有効期限終了日時
+- issuer：発行者
+- subject：対象者
+- waltid_credential_id：追加対象の証明書ID
+- hash：証明書対象者情報のSHA-256ハッシュ値（先頭に「0x」を付与）
+
+ドキュメントID（doc_id）は、値がundefined、null、空文字列のいずれでもない場合のみ登録項目に含める。
+
+基本4情報の場合、doc_idには基本4情報の固定値（docIds.b4d）を設定する。
+
+————————
+
+Walt.id Wallet APIを呼び出し、証明書をウォレットへインポートする。
+
+■ 使用API
+- メソッド：POST
+- エンドポイント：/wallet/{walletId}/credentials/import
 
 ■ パスパラメータ
 - walletId：Walt.idウォレットID
 
 ■ リクエストボディ
-- rawCredential：certJwt
-- label：certName
+- rawCredential：リクエストで指定された証明書データ（certJwt）
 
-JWT形式の場合、JWT文字列をrawCredentialに指定する。
+JWT形式の場合、JWT文字列を指定する。
 
-SD-JWT形式の場合、Disclosures部分を含むSD-JWT文字列をrawCredentialに指定する。
+SD-JWT形式の場合、Disclosuresを含むSD-JWT文字列を指定する。
 
-————————
-
-Walt.id Wallet APIのインポート結果から、登録された証明書IDを取得する。
-
-取得した証明書IDをwaltid_credential_idとして使用する。
+インポートAPIの返却値による証明書IDの再設定は行わない。
 
 ————————
 
-以下の情報をVCウォレットテーブル（vc_wallets）に登録する。
+証明書の登録およびインポート処理が正常に完了した場合、DBトランザクションをコミットする。
 
-- rs_id：生成したリソースID
-- owner_id：所有者ユーザーID
-- owner_name：所有者名
-- cert_name：リクエストで指定された証明書名
-- cert_explanation：リクエストで指定された補足説明
-- doc_id：ドキュメントID
-- issuance_date：証明書の発行日時
-- expiration_date：証明書の有効期限終了日時
-- issuer：発行者DID
-- subject：対象者DID
-- waltid_credential_id：Walt.id証明書ID
-- hash：証明書の対象者情報から取得したハッシュ値
+DBトランザクション内でエラーが発生した場合、DBの変更をロールバックする。
 
-基本4情報の場合、doc_idには0を設定する。
-
-基本4情報以外でdocIdが指定されていない場合、doc_idには999を設定する。
-
-————————
-
-すべてのDB更新処理が正常に完了した場合、DBトランザクションをコミットする。
-
-DB更新処理中にエラーが発生した場合、DBトランザクションをロールバックする。
-
-————————
-
-Walt.idへの証明書インポート後にDB更新処理が失敗した場合、追加した証明書をWalt.idから削除する補償処理を実施する。
-
-既存の基本4情報証明書をWalt.idから削除した後にエラーが発生した場合、DBトランザクションのロールバックだけではWalt.id上の証明書は復元されないため、別途復旧処理が必要となる。
+なお、Walt.id Wallet APIによる証明書の削除およびインポート処理は、DBトランザクションのロールバック対象外とする。
 
 ————————
 
 登録したリソースID（rsId）をレスポンスに設定し、成功レスポンスを返却する。
 
+■ レスポンス
+- rsId：登録した証明書のリソースID
+
 ————————
 
-上記以外のエラーが発生した場合、InternalServerErrorを返却する。
+処理中にエラーが発生した場合、エラー情報をログに出力し、上位処理へ通知する。
