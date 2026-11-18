@@ -1,4 +1,4 @@
-const credentialOfferUri = new URL(credentialOfferUrl)
-    .searchParams.get('credential_offer_uri')
-
-const issuerServerUrl = new URL(credentialOfferUri).origin
+    authorizationCodeRedirect: {
+        clientId: 'wallet-web',
+        redirectUri: 'http://localhost:6102/individual/callback',
+    },
