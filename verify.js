@@ -1,7 +1,4 @@
--- * offerIdカラムを追加（デフォルト値：NULL）
-ALTER TABLE add_cert
-ADD COLUMN credential_offer_id VARCHAR(128) DEFAULT NULL;
+const credentialOfferUri = new URL(credentialOfferUrl)
+    .searchParams.get('credential_offer_uri')
 
--- * offerIdカラムを追加（デフォルト値：NULL）
-ALTER TABLE org_add_cert
-ADD COLUMN credential_offer_id VARCHAR(128) DEFAULT NULL;
+const issuerServerUrl = new URL(credentialOfferUri).origin
