@@ -1,1 +1,1 @@
-Issuer2 APIでCredential Offerを作成した際に、レスポンスで返却されるofferIdをcredential_offer_idに保存する。
+
