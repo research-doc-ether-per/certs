@@ -39,3 +39,20 @@ CREATE TABLE IF NOT EXISTS vp_definitions (
     PRIMARY KEY (group_id, id)
 );
 
+
+gsettings set org.gnome.desktop.screensaver lock-enabled true
+gsettings set org.gnome.desktop.session idle-delay 900
+gsettings set org.gnome.desktop.screensaver lock-delay 0
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+gsettings set org.gnome.desktop.screensaver ubuntu-lock-on-suspend true
+
+
+gsettings get org.gnome.desktop.screensaver lock-enabled
+gsettings get org.gnome.desktop.session idle-delay
+gsettings get org.gnome.desktop.screensaver lock-delay
+gsettings get org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type
+gsettings get org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type
+gsettings get org.gnome.desktop.screensaver ubuntu-lock-on-suspend
+
+
