@@ -1,61 +1,99 @@
--- * Credential Offer関連カラムを追加
-ALTER TABLE add_cert
-    ADD COLUMN IF NOT EXISTS credential_offer_id VARCHAR(128) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS credential_offer_expires_at BIGINT DEFAULT NULL;
+/**
+ * VP定義一覧取得サービス
+ * @param {Object} params パラメータ
+ * @returns {Object} VP定義一覧
+ */
+const listVPDefinitions = async (params) => {
+  logger.debug('*** listVPDefinitions start ***')
+  logger.debug('params: ', JSON.stringify(params, null, 2))
 
--- * 組織Credential Offer関連カラムを追加
-ALTER TABLE org_add_cert
-    ADD COLUMN IF NOT EXISTS credential_offer_id VARCHAR(128) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS credential_offer_expires_at BIGINT DEFAULT NULL;
+  const { realmName, groupId } = params
 
--- * 既存データのCredential Offer有効期限を設定
---   Credential Offer URLが設定されている場合、
---   作成日時 + 5分をUnix Time（ミリ秒）として設定する。
-UPDATE add_cert
-SET credential_offer_expires_at =
-    FLOOR(
-        EXTRACT(EPOCH FROM (create_date + INTERVAL '5 minutes')) * 1000
-    )::BIGINT
-WHERE credential_offer_url IS NOT NULL
-    AND credential_offer_expires_at IS NULL;
+  let result = {}
 
-UPDATE org_add_cert
-SET credential_offer_expires_at =
-    FLOOR(
-        EXTRACT(EPOCH FROM (create_date + INTERVAL '5 minutes')) * 1000
-    )::BIGINT
-WHERE credential_offer_url IS NOT NULL
-    AND credential_offer_expires_at IS NULL;
+  try {
+    const conditions = {}
 
--- * Issuer名のNOT NULL制約を解除
-ALTER TABLE issuer
-    ALTER COLUMN name DROP NOT NULL;
+    // Realm名に応じて公開条件を設定する
+    if (
+      realmName === keycloak.allowedRealms.individual ||
+      realmName === keycloak.allowedRealms.organization
+    ) {
+      conditions.is_public = true
+    } else if (realmName !== keycloak.allowedRealms.admin) {
+      const error = new Error('Invalid realm.')
+      error.code = 'ForbiddenRequestError'
+      throw error
+    }
 
--- * Presentation Request URLテーブルにカラムを追加
-ALTER TABLE presentation_request_url
-    ADD COLUMN IF NOT EXISTS presentation_request_session_id VARCHAR(128) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS presentation_request_expires_at BIGINT DEFAULT NULL;
+    // グループIDを設定する
+    const targetGroupId = groupId?.trim() || 'all'
 
--- * 組織Presentation Request URLテーブルにカラムを追加
-ALTER TABLE org_presentation_request_url
-    ADD COLUMN IF NOT EXISTS presentation_request_session_id VARCHAR(128) DEFAULT NULL,
-    ADD COLUMN IF NOT EXISTS presentation_request_expires_at BIGINT DEFAULT NULL;
+    // VP定義情報を取得する
+    let datas = await walletDBService.select('vp_definitions', {
+      ...conditions,
+      group_id: targetGroupId,
+    })
 
--- * 既存データのPresentation Request URL有効期限を設定
---   Presentation Request URLが設定されている場合、
---   作成日時 + 5分をUnix Time（ミリ秒）として設定する。
-UPDATE presentation_request_url
-SET presentation_request_expires_at =
-    FLOOR(
-        EXTRACT(EPOCH FROM (create_date + INTERVAL '5 minutes')) * 1000
-    )::BIGINT
-WHERE presentation_request_url IS NOT NULL
-    AND presentation_request_expires_at IS NULL;
+    // 指定されたグループのVP定義情報が存在しない場合、
+    // 共通のVP定義情報を取得する
+    if (datas.length === 0 && targetGroupId !== 'all') {
+      datas = await walletDBService.select('vp_definitions', {
+        ...conditions,
+        group_id: 'all',
+      })
+    }
 
-UPDATE org_presentation_request_url
-SET presentation_request_expires_at =
-    FLOOR(
-        EXTRACT(EPOCH FROM (create_date + INTERVAL '5 minutes')) * 1000
-    )::BIGINT
-WHERE presentation_request_url IS NOT NULL
-    AND presentation_request_expires_at IS NULL;
+    // レスポンス情報を整理する
+    const list = datas.map((data) => {
+      const {
+        vcPolicies,
+        vpPolicies,
+        specificVcPolicies,
+        dcql,
+        createDate,
+        updateDate,
+        ...others
+      } = data
+
+      // Policy情報を整理する
+      const policies = {
+        vc_policies: vcPolicies,
+        vp_policies: vpPolicies,
+      }
+
+      // VC個別Policyが存在する場合のみ追加する
+      if (
+        specificVcPolicies &&
+        Object.keys(specificVcPolicies).length > 0
+      ) {
+        policies.specific_vc_policies = specificVcPolicies
+      }
+
+      // VP定義情報を整理する
+      const vpDefinitions = {
+        policies,
+        dcqlQuery: dcql,
+      }
+
+      return {
+        ...others,
+        vpDefinitions,
+        createDate: convertToUtcUnix(createDate),
+        updateDate: convertToUtcUnix(updateDate),
+      }
+    })
+
+    result = { list }
+
+    logger.debug('result: ', JSON.stringify(result, null, 2))
+
+    return result
+  } catch (error) {
+    logger.error('error.message: ', error.message)
+    logger.error('error.stack: ', error.stack)
+    throw error
+  } finally {
+    logger.debug('*** listVPDefinitions end ***')
+  }
+}
