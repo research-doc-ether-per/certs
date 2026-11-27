@@ -44,16 +44,21 @@ const listVPDefinitions = async (params) => {
       })
     }
 
+    // VP定義情報をIDの昇順でソートする
+    datas.sort((a, b) => a.id.localeCompare(b.id))
+
     // レスポンス情報を整理する
     const list = datas.map((data) => {
       const {
+        id,
+        name,
+        description,
+        credentialTypes,
+        isPublic,
         vcPolicies,
         vpPolicies,
         specificVcPolicies,
         dcql,
-        createDate,
-        updateDate,
-        ...others
       } = data
 
       // Policy情報を整理する
@@ -72,15 +77,17 @@ const listVPDefinitions = async (params) => {
 
       // VP定義情報を整理する
       const vpDefinitions = {
-        policies,
         dcqlQuery: dcql,
+        policies,
       }
 
       return {
-        ...others,
+        id,
+        name,
+        description,
+        credentialTypes,
+        isPublic,
         vpDefinitions,
-        createDate: convertToUtcUnix(createDate),
-        updateDate: convertToUtcUnix(updateDate),
       }
     })
 
