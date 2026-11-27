@@ -1,106 +1,65 @@
-/**
- * VP定義一覧取得サービス
- * @param {Object} params パラメータ
- * @returns {Object} VP定義一覧
- */
-const listVPDefinitions = async (params) => {
-  logger.debug('*** listVPDefinitions start ***')
-  logger.debug('params: ', JSON.stringify(params, null, 2))
+認証処理を実施する。
 
-  const { realmName, groupId } = params
+—————————————————
 
-  let result = {}
+リクエストパラメータから情報を取得する。
 
-  try {
-    const conditions = {}
+・groupId：グループID
 
-    // Realm名に応じて公開条件を設定する
-    if (
-      realmName === keycloak.allowedRealms.individual ||
-      realmName === keycloak.allowedRealms.organization
-    ) {
-      conditions.is_public = true
-    } else if (realmName !== keycloak.allowedRealms.admin) {
-      const error = new Error('Invalid realm.')
-      error.code = 'ForbiddenRequestError'
-      throw error
-    }
+—————————————————
 
-    // グループIDを設定する
-    const targetGroupId = groupId?.trim() || 'all'
+ユーザ種別に応じて公開条件を設定する。
 
-    // VP定義情報を取得する
-    let datas = await walletDBService.select('vp_definitions', {
-      ...conditions,
-      group_id: targetGroupId,
-    })
+【個人ユーザ・組織ユーザの場合】
+・is_public：true
 
-    // 指定されたグループのVP定義情報が存在しない場合、
-    // 共通のVP定義情報を取得する
-    if (datas.length === 0 && targetGroupId !== 'all') {
-      datas = await walletDBService.select('vp_definitions', {
-        ...conditions,
-        group_id: 'all',
-      })
-    }
+【管理者の場合】
+・公開条件を指定しない。
 
-    // VP定義情報をIDの昇順でソートする
-    datas.sort((a, b) => a.id.localeCompare(b.id))
+—————————————————
 
-    // レスポンス情報を整理する
-    const list = datas.map((data) => {
-      const {
-        id,
-        name,
-        description,
-        credentialTypes,
-        isPublic,
-        vcPolicies,
-        vpPolicies,
-        specificVcPolicies,
-        dcql,
-      } = data
+VP定義管理テーブル（vp_definitions）からVP定義情報を取得する。
 
-      // Policy情報を整理する
-      const policies = {
-        vc_policies: vcPolicies,
-        vp_policies: vpPolicies,
-      }
+■検索条件
+・group_id：リクエストパラメータで指定されたgroupId（未指定または空文字の場合は「all」）
+・is_public：ユーザ種別に応じて設定した公開条件
 
-      // VC個別Policyが存在する場合のみ追加する
-      if (
-        specificVcPolicies &&
-        Object.keys(specificVcPolicies).length > 0
-      ) {
-        policies.specific_vc_policies = specificVcPolicies
-      }
+—————————————————
 
-      // VP定義情報を整理する
-      const vpDefinitions = {
-        dcqlQuery: dcql,
-        policies,
-      }
+指定されたグループIDが「all」以外で、VP定義情報が取得できなかった場合、VP定義管理テーブル（vp_definitions）から共通のVP定義情報を取得する。
 
-      return {
-        id,
-        name,
-        description,
-        credentialTypes,
-        isPublic,
-        vpDefinitions,
-      }
-    })
+■検索条件
+・group_id：all
+・is_public：ユーザ種別に応じて設定した公開条件
 
-    result = { list }
+—————————————————
 
-    logger.debug('result: ', JSON.stringify(result, null, 2))
+取得したVP定義情報をソートする。
 
-    return result
-  } catch (error) {
-    logger.error('error.message: ', error.message)
-    logger.error('error.stack: ', error.stack)
-    throw error
-  } finally {
-    logger.debug('*** listVPDefinitions end ***')
-  }
-}
+■ソート条件
+・id：昇順
+
+—————————————————
+
+取得したVP定義情報ごとに、Policy情報（policies）を整理する。
+
+・vc_policies：VC標準Policy
+・vp_policies：VP標準Policy
+・specific_vc_policies：VC個別Policy
+
+※specific_vc_policiesが存在し、空でない場合のみ追加する。
+
+—————————————————
+
+VP定義情報（vpDefinitions）を整理する。
+
+・dcqlQuery：取得したDCQL定義情報
+・policies：整理したPolicy情報
+
+—————————————————
+
+レスポンス情報を整理し、返却する。
+
+※VP定義情報が取得できなかった場合は、空の配列を返却する。
+
+※処理中に上記記載以外のエラーが発生した場合、InternalServerErrorを返却する。
